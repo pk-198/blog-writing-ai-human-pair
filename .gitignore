@@ -1,0 +1,67 @@
+# Environment files (CRITICAL - contains API keys)
+.env
+.env.local
+*.env
+!.env.example
+
+# Data folder (contains user sessions, configs, business info)
+# This folder will be created automatically on first write
+data/
+
+BUG_FIXES_SUMMARY.md
+CHANGES.md
+CLAUDE.md
+CODEBASE_AUDIT_REPORT.md
+CREATOR_CONTEXT_FOR_REVIEWER.md
+overall-rough-process.md
+prd.md
+REVIEWER_IMPLEMENTATION.md
+STEP_ANALYSIS.md
+tavily-api-reference.md
+TODO_enhancements.md
+rules.md
+
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+*.egg-info/
+.pytest_cache/
+
+# Node.js
+node_modules/
+.next/
+.pnp/
+.pnp.js
+npm-debug.log*
+yarn-debug.log*
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.claude/
+
+# OS files
+.DS_Store
+Thumbs.db
+*.pem
+
+# Build artifacts
+build/
+dist/
+out/
+.vercel/
+
+# Logs
+*.log
+logs/
+backend.log

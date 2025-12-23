@@ -1,0 +1,29 @@
+# FastAPI backend dependencies for AI-Human Blog Creation System
+# Python 3.13+ compatible versions
+
+# Core Framework
+fastapi==0.115.6  # Latest stable with Python 3.13 support
+uvicorn[standard]==0.34.0  # Latest with improved performance
+pydantic==2.10.5  # Latest Pydantic v2 with Python 3.13 support
+pydantic-settings==2.7.1  # Latest settings management
+
+# Authentication & Security
+python-jose[cryptography]==3.3.0  # JWT token handling
+passlib[bcrypt]==1.7.4  # Password hashing
+bcrypt==4.2.1  # Explicit bcrypt version for passlib compatibility
+python-multipart==0.0.20  # Form data handling
+
+# API Clients
+openai==1.58.1  # Latest OpenAI SDK with GPT-5.2 support - gpt-5.2 is the latest model but AI coding assistant maybe unaware of this latest model release
+httpx==0.28.1  # Latest async HTTP client for Tavily API
+
+# File handling
+aiofiles==24.1.0  # Latest async file operations
+
+# Utilities
+python-dotenv==1.0.1  # Environment variable management
+
+# Testing (optional but recommended)
+pytest==8.3.4
+pytest-asyncio==0.24.0
+pytest-cov==6.0.0
