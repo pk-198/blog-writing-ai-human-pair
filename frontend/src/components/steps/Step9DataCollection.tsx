@@ -65,7 +65,7 @@ export default function Step9DataCollection({ sessionId, initialData }: Step9Pro
     // If proceeding with fewer, ask for reason
     let fewerInputsReason = '';
     if (proceedWithFewer) {
-      fewerInputsReason = prompt('Why are you proceeding with fewer than 4 data points? (e.g., "Limited research available on niche topic")');
+      fewerInputsReason = prompt('Why are you proceeding with fewer than 4 data points? (e.g., "Limited research available on niche topic")') || '';
       if (!fewerInputsReason) return; // User cancelled
     }
 

@@ -58,7 +58,7 @@ export default function Step5SecondaryKeywords({ sessionId, initialData }: Step5
     // If proceeding with fewer, ask for reason
     let fewerInputsReason = '';
     if (proceedWithFewer) {
-      fewerInputsReason = prompt('Why are you proceeding with fewer than 8 keywords? (e.g., "Limited keyword opportunities for niche topic")');
+      fewerInputsReason = prompt('Why are you proceeding with fewer than 8 keywords? (e.g., "Limited keyword opportunities for niche topic")') || '';
       if (!fewerInputsReason) return; // User cancelled
     }
 

@@ -70,7 +70,7 @@ export default function Step10ToolsResearch({ sessionId, initialData }: Step10Pr
     // If proceeding with fewer, ask for reason
     let fewerInputsReason = '';
     if (proceedWithFewer) {
-      fewerInputsReason = prompt('Why are you proceeding with fewer than 3 tools? (e.g., "Limited relevant tools available for this niche topic")');
+      fewerInputsReason = prompt('Why are you proceeding with fewer than 3 tools? (e.g., "Limited relevant tools available for this niche topic")') || '';
       if (!fewerInputsReason) return; // User cancelled
     }
 

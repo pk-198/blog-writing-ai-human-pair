@@ -103,7 +103,7 @@ export default function Step11ResourceLinks({ sessionId, initialData }: Step11Pr
     // If proceeding with fewer, ask for reason
     let fewerInputsReason = '';
     if (proceedWithFewer) {
-      fewerInputsReason = prompt('Why are you proceeding with fewer than 5 resource links? (e.g., "Limited credible external resources available for this niche topic")');
+      fewerInputsReason = prompt('Why are you proceeding with fewer than 5 resource links? (e.g., "Limited credible external resources available for this niche topic")') || '';
       if (!fewerInputsReason) return; // User cancelled
     }
 

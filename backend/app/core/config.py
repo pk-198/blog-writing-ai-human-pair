@@ -42,11 +42,11 @@ class Settings(BaseSettings):
 
     # Company Information (for LLM context)
     COMPANY_NAME: str = "Dograh"
-    COMPANY_DESCRIPTION: str = "AI-powered blog creation platform for SEO-optimized content"
-    COMPANY_COMPETITORS: Union[List[str], str] = "Jasper,Copy.ai,Writesonic,ContentBot,Rytr"
+    COMPANY_DESCRIPTION: str = "Open source VOice AI PLatform - for building AI calling agents with a drag and drop visual conversation builder"
+    COMPANY_COMPETITORS: Union[List[str], str] = "Vapi, bland ai, livekit, pipecat, synthflow, retell ai"
 
     # CORS settings - can be comma-separated string or list
-    CORS_ORIGINS: Union[List[str], str] = "http://localhost:3000,http://127.0.0.1:3000"
+    CORS_ORIGINS: Union[List[str], str] = "http://localhost:3005,http://127.0.0.1:3005"
 
     # Data paths - relative to project root
     DATA_DIR: str = "../data"

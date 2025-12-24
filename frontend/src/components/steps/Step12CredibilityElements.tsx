@@ -93,7 +93,7 @@ export default function Step12CredibilityElements({ sessionId, initialData }: St
 
       fewerInputsReason = prompt(
         `Why are you proceeding with fewer inputs? (Missing: ${missingItems.join(', ')})\n\ne.g., "Limited first-person experience with this specific topic"`
-      );
+      ) || '';
       if (!fewerInputsReason) return; // User cancelled
     }
 

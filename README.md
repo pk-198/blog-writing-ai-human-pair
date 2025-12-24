@@ -111,11 +111,11 @@ cp .env.example .env
 # Edit .env and add your API keys and passwords
 
 # Run development server
-uvicorn app.main:app --reload --log-level debug --host 0.0.0.0 --port 8000
+uvicorn app.main:app --reload --log-level debug --host 0.0.0.0 --port 8005
 ```
 
-Backend will be available at: http://localhost:8000
-API docs at: http://localhost:8000/docs
+Backend will be available at: http://localhost:8005
+API docs at: http://localhost:8005/docs
 
 ### Frontend Setup
 
@@ -128,13 +128,13 @@ npm install
 
 # Configure environment
 cp .env.example .env.local
-# Edit .env.local if needed (default backend URL is http://localhost:8000)
+# Edit .env.local if needed (default backend URL is http://localhost:8005)
 
 # Run development server
 npm run dev
 ```
 
-Frontend will be available at: http://localhost:3000
+Frontend will be available at: http://localhost:3005
 
 ## User Roles
 
@@ -260,12 +260,12 @@ TAVILY_API_KEY=tvly-xxxxx
 SECRET_KEY=your-secret-key
 CREATOR_PASSWORD=your_creator_password
 REVIEWER_PASSWORD=your_reviewer_password
-CORS_ORIGINS=http://localhost:3000,http://localhost:3001
+CORS_ORIGINS=http://localhost:3005,http://localhost:3001
 ```
 
 ### Frontend (.env.local)
 ```
-NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_API_URL=http://localhost:8005
 ```
 
 ## Testing
