@@ -861,7 +861,7 @@ BLOG OUTLINE (Full Structure):
 {outline_summary}
 {business_section}
 
-AVAILABLE DATA POINTS (Statistics):
+AVAILABLE DATA POINTS/Statistics  :
 {json.dumps(data_points, indent=2)}
 {blog_type_section}
 {expert_section}
@@ -1169,7 +1169,7 @@ OTHER OPTIMIZATIONS:
 Outline:
 {json.dumps(outline, indent=2)}
 
-Collected Data (with sources):
+Collected Data with sources(CRITICAL - TRY TO USE ALL THESE DATA POINTS ONE BY ONE and ORGANICALLY WHEREVER RELEVANT IN THE BLOG ):
 {json.dumps(collected_data, indent=2)}
 
 Credibility Elements:

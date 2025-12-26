@@ -408,7 +408,7 @@ export default function Step9DataCollection({ sessionId, initialData }: Step9Pro
         <div className="space-y-4">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold text-gray-900">
-              Data Points ({validCount}/4-5)
+              Data Points ({validCount}/7-8)
             </h3>
             <button
               onClick={handleAddDataPoint}
@@ -469,7 +469,7 @@ export default function Step9DataCollection({ sessionId, initialData }: Step9Pro
           {/* Validation Message */}
           {validCount < 4 && (
             <p className="text-sm text-gray-600">
-              Add {4 - validCount} more data {4 - validCount === 1 ? 'point' : 'points'} to meet the minimum requirement
+              Provide 7-8 data points if possible. Else add atleast {4 - validCount} more data {4 - validCount === 1 ? 'point' : 'points'} to meet the minimum requirement
             </p>
           )}
 
