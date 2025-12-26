@@ -21,6 +21,7 @@ class StepInfo(BaseModel):
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     data: Dict[str, Any] = Field(default_factory=dict)
+    llm_prompt: Optional[str] = None  # Full prompt sent to LLM (for transparency and auditing)
     human_action: Optional[str] = None
     skipped: bool = False
     skip_reason: Optional[str] = Field(None, max_length=200)
@@ -36,6 +37,7 @@ class SessionState(BaseModel):
     status: str = "active"  # active, paused, completed, expired
     primary_keyword: str
     blog_type: str  # Blog type description (e.g., "webinar: details", "comparison: details", etc.)
+    schema_version: int = 1  # Version 1: old (Steps 21=Checklist, 22=Export), Version 2: new (Steps 21=Export, 22=Checklist)
     steps: Dict[str, StepInfo] = Field(default_factory=dict)
 
 
@@ -62,6 +64,7 @@ class SessionResponse(BaseModel):
     status: str
     primary_keyword: str
     blog_type: str
+    schema_version: int = 1
 
 
 class StepUpdate(BaseModel):

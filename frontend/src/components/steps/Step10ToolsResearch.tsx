@@ -6,9 +6,10 @@
 
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import StepContainer from '../shared/StepContainer';
 import StepNavigation from '../shared/StepNavigation';
+import PromptDisplay from '../shared/PromptDisplay';
 import { api } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 
@@ -16,6 +17,11 @@ interface Tool {
   name: string;
   features: string;
   url: string;
+}
+
+interface ToolSuggestion {
+  tool_name: string;
+  what_to_look_for: string[];
 }
 
 interface Step10Props {
@@ -32,6 +38,56 @@ export default function Step10ToolsResearch({ sessionId, initialData }: Step10Pr
     initialData && Object.keys(initialData).length > 0
   );
   const [error, setError] = useState<string | null>(null);
+
+  // AI Suggestions state
+  const [toolSuggestions, setToolSuggestions] = useState<ToolSuggestion[]>([]);
+  const [isGeneratingSuggestions, setIsGeneratingSuggestions] = useState(false);
+  const [suggestionsLlmPrompt, setSuggestionsLlmPrompt] = useState('');
+  const [suggestionsError, setSuggestionsError] = useState<string | null>(null);
+  const [showSuggestionsSection, setShowSuggestionsSection] = useState(true);
+  const [showLoadingModal, setShowLoadingModal] = useState(false);
+
+  // Auto-generate tool suggestions on component mount
+  useEffect(() => {
+    if (!executionComplete) {
+      handleGenerateToolSuggestions();
+    }
+  }, []);
+
+  const handleGenerateToolSuggestions = async () => {
+    setShowLoadingModal(true);
+    setIsGeneratingSuggestions(true);
+    setSuggestionsError(null);
+
+    try {
+      const token = getToken();
+      if (!token) {
+        throw new Error('Not authenticated');
+      }
+
+      const result = await api.executeStep10ToolsResearch(
+        sessionId,
+        [],
+        token,
+        false,
+        '',
+        'generate_suggestions',
+        ''
+      );
+
+      if (result.success && result.data) {
+        setToolSuggestions(result.data.tool_suggestions || []);
+        setSuggestionsLlmPrompt(result.data.llm_prompt || '');
+      } else {
+        setSuggestionsError(result.error || 'Failed to generate tool suggestions');
+      }
+    } catch (err: any) {
+      setSuggestionsError(err.message || 'Failed to generate tool suggestions');
+    } finally {
+      setIsGeneratingSuggestions(false);
+      setShowLoadingModal(false);
+    }
+  };
 
   const handleAddTool = () => {
     if (tools.length >= 5) {
@@ -152,6 +208,68 @@ export default function Step10ToolsResearch({ sessionId, initialData }: Step10Pr
         </p>
       </div>
 
+      {/* AI Tool Suggestions */}
+      {!executionComplete && (
+        <div className="mb-6 bg-purple-50 border border-purple-200 rounded-lg">
+          <div
+            className="p-4 flex items-center justify-between cursor-pointer"
+            onClick={() => setShowSuggestionsSection(!showSuggestionsSection)}
+          >
+            <div>
+              <h3 className="font-semibold text-purple-900">
+                🛠️ AI Tool Suggestions For Researching ({toolSuggestions.length})
+              </h3>
+              <p className="text-sm text-purple-700 mt-1">
+                Research these recommended tools for building voice agents (Note: new tools may have come up too & these may be outdated)
+              </p>
+            </div>
+            <button className="text-purple-900 text-xl">
+              {showSuggestionsSection ? '−' : '+'}
+            </button>
+          </div>
+
+          {showSuggestionsSection && (
+            <div className="px-4 pb-4 space-y-4">
+              {/* Tool Suggestions List */}
+              {toolSuggestions.length > 0 && (
+                <div className="space-y-3">
+                  {toolSuggestions.map((tool, index) => (
+                    <div key={index} className="bg-white border border-purple-300 rounded-lg p-4">
+                      <div className="flex items-start gap-2 mb-2">
+                        <span className="px-2 py-1 bg-purple-100 text-purple-800 text-xs font-semibold rounded shrink-0">
+                          #{index + 1}
+                        </span>
+                        <h4 className="font-semibold text-gray-900">{tool.tool_name}</h4>
+                      </div>
+                      <div className="ml-8">
+                        <p className="text-sm font-medium text-gray-700 mb-2">What to look for:</p>
+                        <ul className="list-disc list-inside space-y-1">
+                          {tool.what_to_look_for.map((point, pointIndex) => (
+                            <li key={pointIndex} className="text-sm text-gray-600">{point}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* LLM Prompt Display */}
+              {suggestionsLlmPrompt && (
+                <PromptDisplay prompt={suggestionsLlmPrompt} title="LLM Prompt for Tool Suggestions" />
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Suggestions Error */}
+      {suggestionsError && !executionComplete && (
+        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+          <p className="text-red-700">{suggestionsError}</p>
+        </div>
+      )}
+
       {executionComplete ? (
         /* Completion State */
         <div className="space-y-6">
@@ -241,12 +359,12 @@ export default function Step10ToolsResearch({ sessionId, initialData }: Step10Pr
                 {/* Features */}
                 <div className="mb-3">
                   <label className="block text-xs font-medium text-gray-700 mb-1">
-                    Features *
+                    Notes/Features etc *
                   </label>
                   <textarea
                     value={tool.features}
                     onChange={(e) => handleToolChange(index, 'features', e.target.value)}
-                    placeholder="Key features and capabilities"
+                    placeholder="Reviews or Any Notes or Key features or capabilities etc"
                     rows={3}
                     className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
@@ -320,6 +438,26 @@ export default function Step10ToolsResearch({ sessionId, initialData }: Step10Pr
         onSaveAndPause={handleSaveAndPause}
         executionComplete={executionComplete}
       />
+
+      {/* Loading Modal - Blocks UI while generating AI suggestions */}
+      {showLoadingModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-8 max-w-md mx-4 text-center">
+            <div className="mb-4">
+              <div className="inline-block text-6xl animate-spin">⏳</div>
+            </div>
+            <h3 className="text-xl font-semibold text-gray-900 mb-2">
+              Generating Tool Suggestions
+            </h3>
+            <p className="text-gray-600">
+              Please wait while we generate relevant tool suggestions for building voice agents...
+            </p>
+            <div className="mt-4 text-sm text-gray-500">
+              This may take 10-20 seconds
+            </div>
+          </div>
+        </div>
+      )}
     </StepContainer>
   );
 }

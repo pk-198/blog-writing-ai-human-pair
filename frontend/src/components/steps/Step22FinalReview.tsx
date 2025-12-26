@@ -1,6 +1,6 @@
 /**
- * Step 21: Final Review Checklist
- * Human performs final review against comprehensive checklist
+ * Step 22: Final Review Checklist
+ * Reference checklist for post-export editing and uploading
  * Owner: Human
  */
 
@@ -12,12 +12,15 @@ import StepNavigation from '../shared/StepNavigation';
 import { api } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 
-interface Step21Props {
+interface Step22Props {
   sessionId: string;
   initialData?: any;
 }
 
 const REVIEW_CHECKLIST = {
+  infographics: [
+    { id: 'create_infographics', label: '📊 Create infographics (MOST IMPORTANT - 2-3 visuals based on Step 15 plan)' },
+  ],
   content: [
     { id: 'word_count', label: 'Blog is 2000-3000 words' },
     { id: 'primary_keyword', label: 'Primary keyword appears in title and first paragraph' },
@@ -47,11 +50,11 @@ const REVIEW_CHECKLIST = {
   ],
 };
 
-export default function Step21FinalReview({ sessionId, initialData }: Step21Props) {
+export default function Step22FinalReview({ sessionId, initialData }: Step22Props) {
   const [checklist, setChecklist] = useState<{ [key: string]: boolean }>(
     initialData?.checklist_results || {}
   );
-  const [notes, setNotes] = useState(initialData?.review_notes || '');
+  const [feedback, setFeedback] = useState(initialData?.feedback || initialData?.review_notes || '');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [executionComplete, setExecutionComplete] = useState(
     initialData && Object.keys(initialData).length > 0
@@ -68,6 +71,7 @@ export default function Step21FinalReview({ sessionId, initialData }: Step21Prop
   const handleSubmit = async () => {
     // Validation - check if all items are checked
     const allItems = [
+      ...REVIEW_CHECKLIST.infographics,
       ...REVIEW_CHECKLIST.content,
       ...REVIEW_CHECKLIST.seo,
       ...REVIEW_CHECKLIST.credibility,
@@ -92,10 +96,10 @@ export default function Step21FinalReview({ sessionId, initialData }: Step21Prop
         throw new Error('Not authenticated');
       }
 
-      const result = await api.executeStep21FinalReview(
+      const result = await api.executeStep22FinalReview(
         sessionId,
         checklist,
-        notes,
+        feedback,
         token
       );
 
@@ -121,7 +125,7 @@ export default function Step21FinalReview({ sessionId, initialData }: Step21Prop
         throw new Error('Not authenticated');
       }
 
-      await api.skipStep(21, { session_id: sessionId, reason }, token);
+      await api.skipStep(22, { session_id: sessionId, reason }, token);
       setExecutionComplete(true);
     } catch (err: any) {
       setError(err.message || 'Failed to skip step');
@@ -134,6 +138,7 @@ export default function Step21FinalReview({ sessionId, initialData }: Step21Prop
 
   const calculateProgress = () => {
     const allItems = [
+      ...REVIEW_CHECKLIST.infographics,
       ...REVIEW_CHECKLIST.content,
       ...REVIEW_CHECKLIST.seo,
       ...REVIEW_CHECKLIST.credibility,
@@ -147,21 +152,23 @@ export default function Step21FinalReview({ sessionId, initialData }: Step21Prop
 
   return (
     <StepContainer
-      stepNumber={21}
+      stepNumber={22}
       stepName="Final Review Checklist"
       owner="Human"
-      description="Perform a comprehensive final review of the blog draft against quality, SEO, credibility, and content guidelines."
+      description="Reference checklist for post-export editing and uploading. Use this to ensure blog meets all quality standards."
     >
       {/* Instructions */}
       {!executionComplete && (
-        <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
-          <h3 className="font-semibold text-green-900 mb-2">Your Task:</h3>
-          <p className="text-green-800 text-sm mb-2">
-            Review the blog draft carefully and check off each item in the checklist below.
-            This ensures the blog meets all quality, SEO, and credibility standards before publication.
+        <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+          <h3 className="font-semibold text-blue-900 mb-2 flex items-center gap-2">
+            <span className="text-xl">ℹ️</span>
+            Reference Checklist (Post-Export)
+          </h3>
+          <p className="text-blue-800 text-sm mb-2">
+            The blog has been exported (Step 21). Use this checklist as a reference while editing and preparing for upload.
           </p>
-          <p className="text-green-700 text-xs">
-            Tip: Review the blog draft in Step 17 and make any necessary edits before completing this checklist.
+          <p className="text-blue-700 text-xs font-medium">
+            ⚠️ Note: Step 22 cannot be executed after session completion. It's view-only for reference.
           </p>
         </div>
       )}
@@ -179,7 +186,7 @@ export default function Step21FinalReview({ sessionId, initialData }: Step21Prop
           </div>
           <div className="w-full bg-gray-200 rounded-full h-2">
             <div
-              className="bg-green-600 h-2 rounded-full transition-all duration-300"
+              className="bg-blue-600 h-2 rounded-full transition-all duration-300"
               style={{ width: `${(progress.checked / progress.total) * 100}%` }}
             />
           </div>
@@ -189,6 +196,27 @@ export default function Step21FinalReview({ sessionId, initialData }: Step21Prop
       {/* Checklist Form */}
       {!executionComplete && (
         <div className="space-y-6">
+          {/* Infographics - MOST IMPORTANT */}
+          <div className="bg-gradient-to-r from-orange-50 to-yellow-50 border-2 border-orange-300 rounded-lg p-4 shadow-md">
+            <h4 className="font-bold text-gray-900 mb-3 flex items-center gap-2 text-lg">
+              <span className="text-2xl">🎨</span>
+              MOST IMPORTANT: Infographics
+            </h4>
+            <div className="space-y-2">
+              {REVIEW_CHECKLIST.infographics.map((item) => (
+                <label key={item.id} className="flex items-start gap-3 cursor-pointer hover:bg-white p-3 rounded-lg transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={checklist[item.id] || false}
+                    onChange={(e) => handleChecklistChange(item.id, e.target.checked)}
+                    className="mt-1 w-5 h-5 text-orange-600 rounded focus:ring-orange-500"
+                  />
+                  <span className="text-gray-800 font-medium">{item.label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+
           {/* Content Quality */}
           <div className="bg-white border border-gray-200 rounded-lg p-4">
             <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
@@ -202,7 +230,7 @@ export default function Step21FinalReview({ sessionId, initialData }: Step21Prop
                     type="checkbox"
                     checked={checklist[item.id] || false}
                     onChange={(e) => handleChecklistChange(item.id, e.target.checked)}
-                    className="mt-1 w-4 h-4 text-green-600 rounded focus:ring-green-500"
+                    className="mt-1 w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
                   />
                   <span className="text-gray-700">{item.label}</span>
                 </label>
@@ -223,7 +251,7 @@ export default function Step21FinalReview({ sessionId, initialData }: Step21Prop
                     type="checkbox"
                     checked={checklist[item.id] || false}
                     onChange={(e) => handleChecklistChange(item.id, e.target.checked)}
-                    className="mt-1 w-4 h-4 text-green-600 rounded focus:ring-green-500"
+                    className="mt-1 w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
                   />
                   <span className="text-gray-700">{item.label}</span>
                 </label>
@@ -244,7 +272,7 @@ export default function Step21FinalReview({ sessionId, initialData }: Step21Prop
                     type="checkbox"
                     checked={checklist[item.id] || false}
                     onChange={(e) => handleChecklistChange(item.id, e.target.checked)}
-                    className="mt-1 w-4 h-4 text-green-600 rounded focus:ring-green-500"
+                    className="mt-1 w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
                   />
                   <span className="text-gray-700">{item.label}</span>
                 </label>
@@ -265,7 +293,7 @@ export default function Step21FinalReview({ sessionId, initialData }: Step21Prop
                     type="checkbox"
                     checked={checklist[item.id] || false}
                     onChange={(e) => handleChecklistChange(item.id, e.target.checked)}
-                    className="mt-1 w-4 h-4 text-green-600 rounded focus:ring-green-500"
+                    className="mt-1 w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
                   />
                   <span className="text-gray-700">{item.label}</span>
                 </label>
@@ -273,17 +301,17 @@ export default function Step21FinalReview({ sessionId, initialData }: Step21Prop
             </div>
           </div>
 
-          {/* Review Notes */}
+          {/* Tool Feedback */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Review Notes (Optional)
+              Give feedback: any bugs or what to improve in the blog writing tool (Optional)
             </label>
             <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Add any final notes, observations, or items that need attention..."
+              value={feedback}
+              onChange={(e) => setFeedback(e.target.value)}
+              placeholder="Report bugs, suggest features, or share ideas for improving the blog creation workflow..."
               rows={4}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
 
@@ -298,9 +326,9 @@ export default function Step21FinalReview({ sessionId, initialData }: Step21Prop
           <button
             onClick={handleSubmit}
             disabled={isSubmitting}
-            className="w-full px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+            className="w-full px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
           >
-            {isSubmitting ? 'Saving Review...' : 'Complete Review & Continue'}
+            {isSubmitting ? 'Saving Review...' : 'Save Checklist Progress'}
           </button>
         </div>
       )}
@@ -308,18 +336,18 @@ export default function Step21FinalReview({ sessionId, initialData }: Step21Prop
       {/* Completion State */}
       {executionComplete && (
         <div className="space-y-4">
-          <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-            <h3 className="font-semibold text-green-900 mb-3 flex items-center gap-2">
+          <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <h3 className="font-semibold text-blue-900 mb-3 flex items-center gap-2">
               <span className="text-2xl">✅</span>
-              Review Completed
+              Checklist Saved
             </h3>
-            <p className="text-green-800 mb-4">
-              Final review checklist completed. {progress.checked}/{progress.total} items checked.
+            <p className="text-blue-800 mb-4">
+              Reference checklist saved. {progress.checked}/{progress.total} items checked.
             </p>
-            {notes && (
-              <div className="mt-3 p-3 bg-white rounded border border-green-200">
-                <h4 className="text-sm font-semibold text-gray-700 mb-1">Review Notes:</h4>
-                <p className="text-sm text-gray-600 whitespace-pre-wrap">{notes}</p>
+            {feedback && (
+              <div className="mt-3 p-3 bg-white rounded border border-blue-200">
+                <h4 className="text-sm font-semibold text-gray-700 mb-1">Tool Feedback:</h4>
+                <p className="text-sm text-gray-600 whitespace-pre-wrap">{feedback}</p>
               </div>
             )}
           </div>
@@ -329,7 +357,7 @@ export default function Step21FinalReview({ sessionId, initialData }: Step21Prop
       {/* Navigation */}
       <StepNavigation
         sessionId={sessionId}
-        currentStep={21}
+        currentStep={22}
         isExecuting={isSubmitting}
         canExecute={false}
         canSkip={!executionComplete}

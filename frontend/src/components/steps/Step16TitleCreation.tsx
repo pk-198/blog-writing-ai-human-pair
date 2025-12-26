@@ -13,6 +13,7 @@ import SuccessBanner from '../shared/SuccessBanner';
 import ErrorBanner from '../shared/ErrorBanner';
 import ProgressAnimation from '../shared/ProgressAnimation';
 import StepNavigation from '../shared/StepNavigation';
+import PromptDisplay from '../shared/PromptDisplay';
 import { api } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 
@@ -134,6 +135,12 @@ export default function Step16TitleCreation({ sessionId, initialData }: Step16Pr
             stepNumber={16}
             stepName="Title Creation"
             message="Generated 3 SEO-optimized title options"
+          />
+
+          {/* LLM Prompt Display */}
+          <PromptDisplay
+            prompt={stepData?.llm_prompt}
+            title="LLM Prompt Sent to OpenAI"
           />
 
           <h3 className="text-xl font-semibold text-gray-900 mb-4">

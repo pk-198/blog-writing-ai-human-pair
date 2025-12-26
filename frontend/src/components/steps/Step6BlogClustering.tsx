@@ -13,6 +13,7 @@ import SuccessBanner from '../shared/SuccessBanner';
 import ErrorBanner from '../shared/ErrorBanner';
 import ProgressAnimation from '../shared/ProgressAnimation';
 import StepNavigation from '../shared/StepNavigation';
+import PromptDisplay from '../shared/PromptDisplay';
 import { api } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 
@@ -98,6 +99,12 @@ export default function Step6BlogClustering({ sessionId, initialData }: Step6Pro
           stepNumber={6}
           stepName="Blog Clustering"
           message={`Analyzed clustering opportunities - ${shouldCluster ? 'Clustering recommended' : 'Standalone blog recommended'}`}
+        />
+
+        {/* LLM Prompt Display */}
+        <PromptDisplay
+          prompt={stepData?.llm_prompt}
+          title="LLM Prompt Sent to OpenAI"
         />
 
         {/* Recommendation Card */}

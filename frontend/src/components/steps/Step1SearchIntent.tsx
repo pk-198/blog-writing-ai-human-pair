@@ -15,6 +15,7 @@ import SuccessBanner from '../shared/SuccessBanner';
 import ErrorBanner from '../shared/ErrorBanner';
 import ProgressAnimation from '../shared/ProgressAnimation';
 import StepNavigation from '../shared/StepNavigation';
+import PromptDisplay from '../shared/PromptDisplay';
 import { api } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
@@ -44,6 +45,7 @@ export default function Step1SearchIntent({ sessionId, initialData }: Step1Props
   );
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [hasBlogSelectionChanges, setHasBlogSelectionChanges] = useState(false);
 
   // Ref for cleanup of success message timer
   const successTimerRef = React.useRef<NodeJS.Timeout | null>(null);
@@ -104,6 +106,7 @@ export default function Step1SearchIntent({ sessionId, initialData }: Step1Props
     );
     setSaveSuccess(false); // Reset success message when selection changes
     setError(null); // Clear error when user changes selection
+    setHasBlogSelectionChanges(true); // Mark blog selection as dirty
   };
 
   const getTotalSelected = () => {
@@ -161,6 +164,7 @@ export default function Step1SearchIntent({ sessionId, initialData }: Step1Props
       });
 
       setSaveSuccess(true);
+      setHasBlogSelectionChanges(false); // Clear blog selection dirty flag
 
       // Clear success message after 3 seconds with cleanup
       if (successTimerRef.current) {
@@ -196,7 +200,7 @@ export default function Step1SearchIntent({ sessionId, initialData }: Step1Props
           <h3 className="font-semibold text-blue-900 mb-2">What happens in this step:</h3>
           <ul className="list-disc list-inside text-blue-800 space-y-1 text-sm">
             <li>AI fetches top 10 SERP results for your primary keyword</li>
-            <li>Analyzes search intent patterns (informational, commercial, transactional, navigational)</li>
+            <li>Analyzes search intent patterns (problem-solution, teardown, benchmark-data, template-playbook, migration, integration, tools-listing, use-case, alternative, comparison|other)</li>
             <li>Provides breakdown of intent percentages</li>
             <li>Recommends which single intent to pursue for optimal ranking</li>
           </ul>
@@ -230,6 +234,12 @@ export default function Step1SearchIntent({ sessionId, initialData }: Step1Props
             stepNumber={1}
             stepName="Search Intent Analysis"
             message="Analyzed search intent from SERP results"
+          />
+
+          {/* LLM Prompt Display */}
+          <PromptDisplay
+            prompt={stepData?.llm_prompt}
+            title="LLM Prompt Sent to OpenAI"
           />
 
           <h3 className="text-xl font-semibold text-gray-900 mb-4">
@@ -359,6 +369,7 @@ export default function Step1SearchIntent({ sessionId, initialData }: Step1Props
                       setCustomUrls(e.target.value);
                       setSaveSuccess(false);
                       setError(null); // Clear error when user changes custom URLs
+                      setHasBlogSelectionChanges(true); // Mark blog selection as dirty
                     }}
                     placeholder={`https://example.com/article-1
 https://example.com/article-2
@@ -370,6 +381,15 @@ https://research-site.com/paper`}
                     💡 Add URLs from your own research that aren't in the top 10 SERP results
                   </p>
                 </div>
+
+                {/* Save Reminder */}
+                {getTotalSelected() >= 3 && !saveSuccess && hasBlogSelectionChanges && (
+                  <div className="mb-3 p-3 bg-yellow-50 border-2 border-yellow-300 rounded-lg">
+                    <p className="text-sm font-semibold text-yellow-900 flex items-center gap-2">
+                      ⚠️ Don't forget to click "Save Blog Selection" before proceeding!
+                    </p>
+                  </div>
+                )}
 
                 {/* Validation & Save Button */}
                 <div className="flex items-center justify-between pt-4 border-t border-blue-200">
@@ -391,9 +411,9 @@ https://research-site.com/paper`}
                   <button
                     onClick={saveBlogSelection}
                     disabled={getTotalSelected() < 3 || isSaving}
-                    className="px-6 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="px-8 py-3 bg-green-600 text-white rounded-lg font-bold text-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg hover:shadow-xl"
                   >
-                    {isSaving ? 'Saving...' : 'Save Blog Selection'}
+                    {isSaving ? '💾 Saving...' : '💾 Save Blog Selection'}
                   </button>
                 </div>
               </div>
@@ -421,7 +441,7 @@ https://research-site.com/paper`}
         onSkip={handleSkip}
         onSaveAndPause={handleSaveAndPause}
         executionComplete={executionComplete}
-        hasUnsavedChanges={hasUnsavedChanges}
+        hasUnsavedChanges={hasUnsavedChanges || hasBlogSelectionChanges}
       />
     </StepContainer>
   );

@@ -1,6 +1,6 @@
 /**
  * Step 12: Credibility Elements
- * Human adds first-person experiences, facts, statistics, and quotes
+ * Human adds first-person experiences and expert quotes
  * Owner: Human
  */
 
@@ -12,20 +12,12 @@ import StepNavigation from '../shared/StepNavigation';
 import { api } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 
-interface Fact {
-  fact: string;
-  source: string;
-}
-
 interface Step12Props {
   sessionId: string;
   initialData?: any;
 }
 
 export default function Step12CredibilityElements({ sessionId, initialData }: Step12Props) {
-  const [facts, setFacts] = useState<Fact[]>(
-    initialData?.facts || Array(5).fill({ fact: '', source: '' })
-  );
   const [experiences, setExperiences] = useState<string[]>(
     initialData?.experiences || ['', '', '']
   );
@@ -37,12 +29,6 @@ export default function Step12CredibilityElements({ sessionId, initialData }: St
     initialData && Object.keys(initialData).length > 0
   );
   const [error, setError] = useState<string | null>(null);
-
-  const handleFactChange = (index: number, field: 'fact' | 'source', value: string) => {
-    const newFacts = [...facts];
-    newFacts[index] = { ...newFacts[index], [field]: value };
-    setFacts(newFacts);
-  };
 
   const handleExperienceChange = (index: number, value: string) => {
     const newExperiences = [...experiences];
@@ -56,10 +42,6 @@ export default function Step12CredibilityElements({ sessionId, initialData }: St
     setQuotes(newQuotes);
   };
 
-  const handleAddFact = () => {
-    setFacts([...facts, { fact: '', source: '' }]);
-  };
-
   const handleAddExperience = () => {
     setExperiences([...experiences, '']);
   };
@@ -70,14 +52,8 @@ export default function Step12CredibilityElements({ sessionId, initialData }: St
 
   const handleSubmit = async (proceedWithFewer: boolean = false) => {
     // Validation
-    const validFacts = facts.filter(f => f.fact.trim() && f.source.trim());
     const validExperiences = experiences.filter(e => e.trim());
     const validQuotes = quotes.filter(q => q.trim());
-
-    if (validFacts.length < 5 && !proceedWithFewer) {
-      setError('Please provide at least 5 facts/statistics with sources, or use "Proceed with Fewer Inputs"');
-      return;
-    }
 
     if (validExperiences.length < 3 && !proceedWithFewer) {
       setError('Please provide at least 3 first-person experiences/recommendations, or use "Proceed with Fewer Inputs"');
@@ -87,12 +63,8 @@ export default function Step12CredibilityElements({ sessionId, initialData }: St
     // If proceeding with fewer, ask for reason
     let fewerInputsReason = '';
     if (proceedWithFewer) {
-      const missingItems = [];
-      if (validFacts.length < 5) missingItems.push(`${validFacts.length} facts (need 5)`);
-      if (validExperiences.length < 3) missingItems.push(`${validExperiences.length} experiences (need 3)`);
-
       fewerInputsReason = prompt(
-        `Why are you proceeding with fewer inputs? (Missing: ${missingItems.join(', ')})\n\ne.g., "Limited first-person experience with this specific topic"`
+        `Why are you proceeding with fewer inputs? (You have ${validExperiences.length} experiences, need 3)\n\ne.g., "Limited first-person experience with this specific topic"`
       ) || '';
       if (!fewerInputsReason) return; // User cancelled
     }
@@ -109,7 +81,6 @@ export default function Step12CredibilityElements({ sessionId, initialData }: St
       const result = await api.executeStep12CredibilityElements(
         sessionId,
         {
-          facts: validFacts,
           experiences: validExperiences,
           quotes: validQuotes
         },
@@ -156,27 +127,25 @@ export default function Step12CredibilityElements({ sessionId, initialData }: St
     window.location.href = '/creator/dashboard';
   };
 
-  const validFactsCount = facts.filter(f => f.fact.trim() && f.source.trim()).length;
   const validExperiencesCount = experiences.filter(e => e.trim()).length;
-  const hasMinimumInputs = validFactsCount >= 5 && validExperiencesCount >= 3;
-  const hasAnyInputs = validFactsCount > 0 || validExperiencesCount > 0;
+  const hasMinimumInputs = validExperiencesCount >= 3;
+  const hasAnyInputs = validExperiencesCount > 0;
 
   return (
     <StepContainer
       stepNumber={12}
       stepName="Credibility Elements"
       owner="Human"
-      description="Add personal experiences, facts, statistics, and expert quotes to enhance credibility"
+      description="Add first-person experiences and expert quotes to enhance credibility"
     >
       {/* Instructions */}
       <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
         <p className="text-sm text-gray-700 mb-2">
-          <strong>Your Task:</strong> Add credibility elements to make the blog trustworthy and
-          unique. Include facts/stats with sources, first-person experiences, and optional expert
-          quotes.
+          <strong>Your Task:</strong> Add first-person experiences and recommendations to make
+          the blog trustworthy and unique. Expert quotes are optional.
         </p>
         <p className="text-xs text-gray-600">
-          💡 Minimum: 5 facts + 3 experiences. Quotes are optional but recommended.
+          💡 Minimum: 3 first-person experiences. Quotes are optional but recommended.
         </p>
       </div>
 
@@ -195,24 +164,18 @@ export default function Step12CredibilityElements({ sessionId, initialData }: St
                 </p>
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-4 text-center">
-              <div className="p-3 bg-white rounded">
-                <div className="text-2xl font-bold text-blue-600">
-                  {initialData?.fact_count || 0}
-                </div>
-                <div className="text-xs text-gray-600">Facts/Stats</div>
-              </div>
+            <div className="grid grid-cols-2 gap-4 text-center">
               <div className="p-3 bg-white rounded">
                 <div className="text-2xl font-bold text-purple-600">
                   {initialData?.experience_count || 0}
                 </div>
-                <div className="text-xs text-gray-600">Experiences</div>
+                <div className="text-xs text-gray-600">First-Person Experiences</div>
               </div>
               <div className="p-3 bg-white rounded">
                 <div className="text-2xl font-bold text-green-600">
                   {initialData?.quote_count || 0}
                 </div>
-                <div className="text-xs text-gray-600">Quotes</div>
+                <div className="text-xs text-gray-600">Expert Quotes</div>
               </div>
             </div>
           </div>
@@ -225,43 +188,6 @@ export default function Step12CredibilityElements({ sessionId, initialData }: St
               <p className="text-red-800 text-sm">{error}</p>
             </div>
           )}
-
-          {/* Facts/Statistics Section */}
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h4 className="font-semibold text-gray-900">
-                📊 Facts/Statistics (min. 5 required)
-              </h4>
-              <button
-                onClick={handleAddFact}
-                className="text-sm text-blue-600 hover:text-blue-800"
-              >
-                + Add Fact
-              </button>
-            </div>
-
-            {facts.map((fact, index) => (
-              <div key={index} className="p-4 bg-gray-50 border border-gray-200 rounded-lg">
-                <div className="text-xs font-medium text-gray-700 mb-2">
-                  Fact #{index + 1}
-                </div>
-                <textarea
-                  value={fact.fact}
-                  onChange={(e) => handleFactChange(index, 'fact', e.target.value)}
-                  placeholder="e.g., 75% of marketers saw increased engagement after..."
-                  rows={2}
-                  className="w-full px-3 py-2 border border-gray-300 rounded mb-2"
-                />
-                <input
-                  type="url"
-                  value={fact.source}
-                  onChange={(e) => handleFactChange(index, 'source', e.target.value)}
-                  placeholder="Source URL"
-                  className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
-                />
-              </div>
-            ))}
-          </div>
 
           {/* First-Person Experiences Section */}
           <div className="space-y-4">
@@ -277,6 +203,15 @@ export default function Step12CredibilityElements({ sessionId, initialData }: St
               </button>
             </div>
 
+            <div className="p-3 bg-purple-50 border border-purple-200 rounded-lg mb-3">
+              <p className="text-xs text-purple-800 font-medium mb-2">💡 Example formats:</p>
+              <ul className="text-xs text-purple-700 space-y-1">
+                <li>• "I strongly recommend &lt;&lt;activity/tool&gt;&gt; as…&lt;&lt;reason&gt;&gt;…"</li>
+                <li>• "To test this, I did &lt;&lt;activity&gt;&gt;, and here's the results……"</li>
+                <li>• "I also encourage you to follow &lt;&lt;activity, sports, X account or person or website&gt;&gt; for &lt;&lt;more||somethingParticular&gt;&gt;"</li>
+              </ul>
+            </div>
+
             {experiences.map((experience, index) => (
               <div key={index} className="p-4 bg-purple-50 border border-purple-200 rounded-lg">
                 <div className="text-xs font-medium text-gray-700 mb-2">
@@ -285,12 +220,12 @@ export default function Step12CredibilityElements({ sessionId, initialData }: St
                 <textarea
                   value={experience}
                   onChange={(e) => handleExperienceChange(index, e.target.value)}
-                  placeholder="e.g., In my experience working with clients, I've found that..."
+                  placeholder="e.g., I strongly recommend using voice AI testing tools as they cut down QA time by 60%..."
                   rows={3}
                   className="w-full px-3 py-2 border border-purple-300 rounded"
                 />
                 <p className="text-xs text-purple-600 mt-1">
-                  💡 Use first-person voice ("I found that...", "My team discovered...")
+                  💡 Use first-person voice ("I recommend...", "I tested...", "I encourage...")
                 </p>
               </div>
             ))}
@@ -344,13 +279,13 @@ export default function Step12CredibilityElements({ sessionId, initialData }: St
                 className="w-full px-6 py-3 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium flex items-center justify-center gap-2"
                 title="Proceed with fewer inputs (requires justification)"
               >
-                ⚠️ Proceed with {validFactsCount} {validFactsCount === 1 ? 'Fact' : 'Facts'} & {validExperiencesCount} {validExperiencesCount === 1 ? 'Experience' : 'Experiences'}
+                ⚠️ Proceed with {validExperiencesCount} {validExperiencesCount === 1 ? 'Experience' : 'Experiences'}
               </button>
             )}
           </div>
 
           <p className="text-xs text-gray-500 text-center">
-            Required: 5+ facts with sources, 3+ first-person experiences • Optional: Expert quotes
+            Required: 3+ first-person experiences • Optional: Expert quotes
           </p>
         </div>
       )}

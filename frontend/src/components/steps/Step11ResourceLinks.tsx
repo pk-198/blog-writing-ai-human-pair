@@ -169,7 +169,7 @@ export default function Step11ResourceLinks({ sessionId, initialData }: Step11Pr
   return (
     <StepContainer
       stepNumber={11}
-      stepName="Resource Links Collection"
+      stepName="(Quora/Reddit/Youtube) Resource Links Collection"
       owner="Human"
       description="Curate 5-7 credible external resource links for additional context"
     >
@@ -177,11 +177,11 @@ export default function Step11ResourceLinks({ sessionId, initialData }: Step11Pr
       <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
         <p className="text-sm text-gray-700 mb-2">
           <strong>Your Task:</strong> Add 5-7 high-quality external resource links that provide
-          additional value to readers (YouTube videos, Reddit discussions, Quora answers, research
+          additional user discussions and social proof value to readers (YouTube videos, Reddit discussions, Quora answers, research
           papers, articles).
         </p>
         <p className="text-xs text-gray-600">
-          💡 Prioritize authoritative sources. Mix different types of content for variety.
+          💡 Prioritize user stories and authoritative sources. Mix different types of content for variety.
         </p>
       </div>
 
@@ -281,13 +281,13 @@ export default function Step11ResourceLinks({ sessionId, initialData }: Step11Pr
                   {/* Title */}
                   <div className="mb-3">
                     <label className="block text-xs font-medium text-gray-700 mb-1">
-                      Title *
+                      What/Title *
                     </label>
                     <input
                       type="text"
                       value={resource.title}
                       onChange={(e) => handleResourceChange(index, 'title', e.target.value)}
-                      placeholder="e.g., Comprehensive guide to X on YouTube"
+                      placeholder="e.g., Review of X on YouTube"
                       className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
                   </div>
@@ -295,12 +295,12 @@ export default function Step11ResourceLinks({ sessionId, initialData }: Step11Pr
                   {/* Description */}
                   <div className="mb-3">
                     <label className="block text-xs font-medium text-gray-700 mb-1">
-                      Description *
+                      Notes/Details/Description *
                     </label>
                     <textarea
                       value={resource.description}
                       onChange={(e) => handleResourceChange(index, 'description', e.target.value)}
-                      placeholder="Brief description of what this resource covers"
+                      placeholder="Brief notes on what this resource covers/describes"
                       rows={2}
                       className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />

@@ -19,7 +19,7 @@ class PlagiarismService:
     """Service for plagiarism detection across blog sessions."""
 
     def __init__(self):
-        self.user_input_steps = [4, 5, 9, 10, 11, 12, 21]  # Human input steps
+        self.user_input_steps = [4, 5, 9, 10, 11, 12, 22]  # Human input steps
         backend_dir = Path(__file__).parent.parent.parent.parent
         self.data_dir = backend_dir / "data"
         self.sessions_dir = self.data_dir / "sessions"
@@ -112,10 +112,10 @@ class PlagiarismService:
                 "quotes": step_data.get("quotes", [])
             }
 
-        elif step_number == 21:
-            # Final Review Checklist
+        elif step_number == 22:
+            # Final Review Checklist - Tool improvement feedback
             return {
-                "notes": step_data.get("notes", "")
+                "feedback": step_data.get("feedback", step_data.get("notes", ""))  # Backward compatible
             }
 
         return {}

@@ -13,6 +13,7 @@ import SuccessBanner from '../shared/SuccessBanner';
 import ErrorBanner from '../shared/ErrorBanner';
 import ProgressAnimation from '../shared/ProgressAnimation';
 import StepNavigation from '../shared/StepNavigation';
+import PromptDisplay from '../shared/PromptDisplay';
 import { api } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 
@@ -107,10 +108,10 @@ export default function Step15InfographicPlanning({ sessionId, initialData }: St
             <div className="text-4xl">🎨</div>
             <div>
               <h3 className="text-xl font-bold text-gray-900">
-                Infographic Suggestions
+                Infographic Suggestions (See details/json below for more details)
               </h3>
               <p className="text-sm text-gray-600">
-                {stepData.count || suggestions.length} visual content ideas identified
+                {stepData.count || suggestions.length} visual content ideas identified- <b>must add one of these infographics to blog</b>
               </p>
             </div>
           </div>
@@ -271,6 +272,13 @@ export default function Step15InfographicPlanning({ sessionId, initialData }: St
             stepName="Infographic Planning"
             message="Generated infographic ideas based on collected data"
           />
+
+          {/* LLM Prompt Display */}
+          <PromptDisplay
+            prompt={stepData?.llm_prompt}
+            title="LLM Prompt Sent to OpenAI"
+          />
+
           {renderInfographics()}
         </div>
       )}

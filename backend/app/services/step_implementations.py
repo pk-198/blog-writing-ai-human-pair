@@ -52,7 +52,7 @@ async def execute_step1_search_intent(
         logger.info(f"[Step 1] Calling OpenAI GPT-4 for intent analysis...")
         logger.debug(f"[Step 1] OpenAI Input: keyword='{primary_keyword}', serp_count={len(serp_data.get('results', []))}, past_blogs_count={len(past_blogs)}")
 
-        analysis = await openai_service.analyze_search_intent(
+        analysis, llm_prompt = await openai_service.analyze_search_intent(
             primary_keyword,
             serp_data["results"],
             past_blogs
@@ -60,6 +60,7 @@ async def execute_step1_search_intent(
 
         # Log detailed analysis results
         logger.info(f"[Step 1] Intent analysis complete. Found {len(analysis.get('intents', []))} intents")
+        logger.debug(f"[Step 1] LLM prompt captured ({len(llm_prompt)} chars) for UI display")
         if analysis.get('intents'):
             logger.info(f"[Step 1] Detected Intents:")
             for intent in analysis['intents']:
@@ -90,6 +91,7 @@ async def execute_step1_search_intent(
             "duplicates_existing": analysis.get('duplicates_existing', False),
             "duplication_notes": analysis.get('duplication_notes', ''),
             "summary": f"Analyzed search intent for '{primary_keyword}'. Found {len(intents)} intents.",
+            "llm_prompt": llm_prompt,  # Full prompt for UI display with variable highlighting
             # Also include raw data for debugging
             "_raw_serp": serp_data,
             "_raw_analysis": analysis
@@ -230,11 +232,12 @@ async def execute_step3_competitor_analysis(
 
         # Analyze with GPT-4
         logger.debug(f"[Step 3] Sending {len(competitors)} competitors to OpenAI for analysis")
-        analysis = await openai_service.analyze_competitors(
+        analysis, llm_prompt = await openai_service.analyze_competitors(
             primary_keyword,
             competitors
         )
         logger.info(f"[Step 3] Analysis complete. Found {len(analysis.get('quintessential_elements', []))} must-have elements")
+        logger.debug(f"[Step 3] LLM prompt captured ({len(llm_prompt)} chars) for UI display")
 
         result = {
             "analysis": analysis,
@@ -242,6 +245,7 @@ async def execute_step3_competitor_analysis(
             "differentiators": analysis.get("differentiators", []),
             "recommended_sections": analysis.get("recommended_sections", []),
             "skip_sections": analysis.get("skip_sections", []),
+            "llm_prompt": llm_prompt,  # Full prompt for UI display with variable highlighting
             "summary": f"Analyzed {len(competitors)} competitors. Identified {len(analysis.get('quintessential_elements', []))} must-have elements."
         }
 
@@ -290,15 +294,17 @@ async def execute_step4_webinar_points(
             # Process transcript if provided (webinar/podcast case)
             extracted_points = []
             extracted_quotes = []
+            webinar_prompt = None
             if transcript:
                 logger.debug(f"[Step 4] Processing transcript with GPT-4")
-                extracted = await openai_service.extract_webinar_points(
+                extracted, webinar_prompt = await openai_service.extract_webinar_points(
                     transcript,
                     guest_info
                 )
                 extracted_points = extracted.get("talking_points", [])
                 extracted_quotes = extracted.get("quotes", [])
                 logger.info(f"[Step 4] Extracted {len(extracted_points)} talking points and {len(extracted_quotes)} quotes from transcript")
+                logger.debug(f"[Step 4] Webinar LLM prompt captured ({len(webinar_prompt)} chars)")
 
             # Load business context from dograh.txt
             backend_dir = Path(__file__).parent.parent.parent.parent
@@ -324,7 +330,7 @@ async def execute_step4_webinar_points(
 
             # Generate 3 contextual questions using GPT-4
             logger.info(f"[Step 4] Generating contextual questions with GPT-4")
-            questions_data = await openai_service.generate_contextual_questions(
+            questions_data, questions_prompt = await openai_service.generate_contextual_questions(
                 primary_keyword=state["primary_keyword"],
                 blog_type=state.get("blog_type", ""),
                 business_context=business_context,
@@ -337,6 +343,16 @@ async def execute_step4_webinar_points(
 
             questions = questions_data.get("questions", [])
             logger.info(f"[Step 4] Generated {len(questions)} contextual questions")
+            logger.debug(f"[Step 4] Questions LLM prompt captured ({len(questions_prompt)} chars)")
+
+            # Combine prompts for display (Step 4 has 2 AI calls)
+            combined_prompt = f"""{questions_prompt}"""
+            if webinar_prompt:
+                combined_prompt = f"""=== WEBINAR/TRANSCRIPT EXTRACTION PROMPT ===
+{webinar_prompt}
+
+=== CONTEXTUAL QUESTIONS GENERATION PROMPT ===
+{questions_prompt}"""
 
             result = {
                 "phase": "phase1_complete",
@@ -350,6 +366,7 @@ async def execute_step4_webinar_points(
                 "has_transcript": bool(transcript),
                 "questions": questions,  # AI-generated questions for user
                 "awaiting_answers": True,
+                "llm_prompt": combined_prompt,  # Full prompts for UI display (2 prompts combined)
                 "summary": f"Phase 1 complete. Generated {len(questions)} contextual questions for deeper insights."
             }
 
@@ -476,7 +493,7 @@ async def execute_step6_blog_clustering(
     try:
         # Get selected intent from Step 1
         step1_data = state["steps"].get("1", {}).get("data", {})
-        selected_intent = step1_data.get("intent_analysis", {}).get("recommended_intent", "informational")
+        selected_intent = step1_data.get("intent_analysis", {}).get("recommended_intent", "teardown")
         logger.debug(f"[Step 6] Using intent: '{selected_intent}'")
 
         # Load past blogs
@@ -497,18 +514,20 @@ async def execute_step6_blog_clustering(
 
         # Analyze clustering with GPT-4
         logger.debug(f"[Step 6] Sending data to OpenAI for clustering recommendation")
-        clustering = await openai_service.suggest_blog_clustering(
+        clustering, llm_prompt = await openai_service.suggest_blog_clustering(
             primary_keyword,
             selected_intent,
             past_blog_data
         )
         logger.info(f"[Step 6] Clustering recommendation: {clustering.get('should_cluster', False)}")
+        logger.debug(f"[Step 6] LLM prompt captured ({len(llm_prompt)} chars) for UI display")
 
         result = {
             "clustering_recommendation": clustering,
             "should_cluster": clustering.get("should_cluster", False),
             "related_blogs": clustering.get("related_blogs", []),
             "cluster_topic": clustering.get("cluster_topic", ""),
+            "llm_prompt": llm_prompt,  # Full prompt for UI display with variable highlighting
             "summary": f"Clustering analysis complete. Should cluster: {clustering.get('should_cluster', False)}"
         }
 
@@ -583,7 +602,7 @@ async def execute_step7_outline_generation(
 
         # Generate outline with GPT-4
         logger.debug(f"[Step 7] Sending data to OpenAI for outline generation")
-        outline = await openai_service.generate_outline(
+        outline, llm_prompt = await openai_service.generate_outline(
             primary_keyword,
             secondary_keywords,
             competitor_analysis,
@@ -595,6 +614,7 @@ async def execute_step7_outline_generation(
             contextual_qa
         )
         logger.info(f"[Step 7] Generated outline with {len(outline.get('sections', []))} main sections")
+        logger.debug(f"[Step 7] LLM prompt captured ({len(llm_prompt)} chars) for UI display")
 
         # Add blog to index (moved from Step 22 - blog assumed to be completed once outline is generated)
         backend_dir = Path(__file__).parent.parent.parent.parent
@@ -612,7 +632,8 @@ async def execute_step7_outline_generation(
             "sections": outline.get("sections", []),
             "total_sections": len(outline.get("sections", [])),
             "blog_index_updated": True,
-            "summary": f"Generated outline with {len(outline.get('sections', []))} main sections. Blog added to index."
+            "summary": f"Generated outline with {len(outline.get('sections', []))} main sections. Blog added to index.",
+            "llm_prompt": llm_prompt  # Full prompt for UI display with variable highlighting
         }
 
         logger.info(f"[Step 7] Successfully completed outline generation and blog index update (session: {session_id})")
@@ -663,7 +684,7 @@ async def execute_step8_llm_optimization(
         logger.debug(f"[Step 8] Sending outline to OpenAI for optimization planning")
         logger.info(f"[Step 8] Context: keyword='{primary_keyword}', blog_type length={len(blog_type)}, competitors={len(competitors)}")
 
-        optimization_plan = await openai_service.plan_llm_optimization(
+        optimization_plan, llm_prompt = await openai_service.plan_llm_optimization(
             outline,
             primary_keyword=primary_keyword,
             blog_type=blog_type,
@@ -672,12 +693,14 @@ async def execute_step8_llm_optimization(
             writing_style=writing_style
         )
         logger.info(f"[Step 8] Created optimization plan for {len(optimization_plan.get('sections', []))} sections")
+        logger.debug(f"[Step 8] LLM prompt captured ({len(llm_prompt)} chars) for UI display")
 
         result = {
             "optimization_plan": optimization_plan,
             "glossary_sections": optimization_plan.get("glossary_sections", []),
             "what_is_sections": optimization_plan.get("what_is_sections", []),
             "summary_sections": optimization_plan.get("summary_sections", []),
+            "llm_prompt": llm_prompt,  # Full prompt for UI display with variable highlighting
             "summary": f"LLM optimization plan created for {len(optimization_plan.get('sections', []))} sections"
         }
 
@@ -689,6 +712,58 @@ async def execute_step8_llm_optimization(
         raise
 
 
+async def _generate_step9_suggestions(
+    state: Dict[str, Any],
+    ideas_customization: str = "",
+    prompts_customization: str = ""
+) -> Dict[str, Any]:
+    """
+    Helper function to generate AI suggestions for Step 9 data collection.
+    Returns ephemeral suggestions (not saved to session state).
+
+    Args:
+        state: Current session state
+        ideas_customization: User constraints for data point ideas
+        prompts_customization: User constraints for research prompts
+
+    Returns:
+        Dict with data_point_ideas, research_prompts, and LLM prompts
+    """
+    logger.info("[Step 9 Suggestions] Generating AI suggestions for data collection")
+
+    # Extract context from state (CORRECTED PATHS)
+    primary_keyword = state.get("primary_keyword", "")
+    outline = state.get("steps", {}).get("7", {}).get("data", {}).get("outline", {})
+
+    if not primary_keyword or not outline:
+        raise ValueError("Missing required context: primary_keyword or outline not found in session state")
+
+    # Generate data point ideas
+    ideas_result, ideas_prompt = await openai_service.generate_data_point_ideas(
+        primary_keyword=primary_keyword,
+        outline=outline,
+        customization_context=ideas_customization
+    )
+
+    # Generate research prompts
+    prompts_result, prompts_prompt = await openai_service.generate_research_prompts(
+        primary_keyword=primary_keyword,
+        outline=outline,
+        recommended_direction="",  # Could optionally extract from ideas
+        customization_context=prompts_customization
+    )
+
+    logger.info("[Step 9 Suggestions] Successfully generated AI suggestions")
+
+    return {
+        "data_point_ideas": ideas_result.get("ideas", []),
+        "research_prompts": prompts_result.get("prompts", []),
+        "llm_prompt_ideas": ideas_prompt,
+        "llm_prompt_prompts": prompts_prompt,
+        "ephemeral": True  # Flag to indicate this data is not persisted
+    }
+
+
 async def execute_step9_data_collection(
     workflow_service,
     session_id: str,
@@ -697,11 +772,31 @@ async def execute_step9_data_collection(
 ) -> Dict[str, Any]:
     """
     Step 9: Data Collection (Human Input).
-    Collects data points with sources for each section.
+    Supports two phases:
+    1. action='generate_suggestions': Generate AI suggestions (ephemeral)
+    2. action='collect' (default): Collect actual data points (persisted)
     """
     logger.info(f"[Step 9] Starting data collection (session: {session_id})")
 
     try:
+        # Phase detection
+        action = input_data.get("action", "collect") if input_data else "collect"
+
+        # Phase 1: Generate AI suggestions (ephemeral)
+        if action == "generate_suggestions":
+            logger.info(f"[Step 9] Phase 1: Generating AI suggestions")
+            ideas_customization = input_data.get("ideas_customization", "")
+            prompts_customization = input_data.get("prompts_customization", "")
+
+            suggestions = await _generate_step9_suggestions(
+                state=state,
+                ideas_customization=ideas_customization,
+                prompts_customization=prompts_customization
+            )
+
+            return suggestions
+
+        # Phase 2: Collect actual data points (persisted)
         if not input_data or not input_data.get("data_points"):
             logger.error(f"[Step 9] No data points provided in input_data")
             raise ValueError("Data points are required for Step 9")
@@ -776,11 +871,45 @@ async def execute_step10_tools_research(
 ) -> Dict[str, Any]:
     """
     Step 10: Tools Research (Conditional Human Input).
-    Collects tool information if relevant.
+    Supports two phases:
+    1. action='generate_suggestions': Generate AI tool suggestions (ephemeral)
+    2. default: Collect actual tools (persisted) or skip if not tools-focused
     """
     logger.info(f"[Step 10] Starting tools research (session: {session_id})")
 
     try:
+        # Phase detection
+        action = input_data.get("action", "collect") if input_data else "collect"
+
+        # Phase 1: Generate AI tool suggestions (ephemeral)
+        if action == "generate_suggestions":
+            logger.info(f"[Step 10] Generating AI tool suggestions")
+
+            # Extract context from state
+            primary_keyword = state.get("primary_keyword", "")
+            outline = state.get("steps", {}).get("7", {}).get("data", {}).get("outline", {})
+
+            if not primary_keyword or not outline:
+                raise ValueError("Missing required context: primary_keyword or outline not found in session state")
+
+            customization = input_data.get("customization", "")
+
+            # Generate tool suggestions
+            suggestions_result, suggestions_prompt = await openai_service.generate_tool_suggestions(
+                primary_keyword=primary_keyword,
+                outline=outline,
+                customization_context=customization
+            )
+
+            logger.info("[Step 10] Successfully generated AI tool suggestions")
+
+            return {
+                "tool_suggestions": suggestions_result.get("tool_suggestions", []),
+                "llm_prompt": suggestions_prompt,
+                "ephemeral": True
+            }
+
+        # Phase 2: Collect actual tools (existing logic)
         if not input_data or not input_data.get("tools"):
             logger.info(f"[Step 10] Step skipped - not tools-focused content (session: {session_id})")
             return {
@@ -926,7 +1055,7 @@ async def execute_step12_credibility_elements(
 ) -> Dict[str, Any]:
     """
     Step 12: Credibility Elements (Human Input).
-    Collects facts, statistics, experiences, quotes.
+    Collects first-person experiences and expert quotes.
     """
     logger.info(f"[Step 12] Starting credibility elements collection (session: {session_id})")
 
@@ -935,11 +1064,10 @@ async def execute_step12_credibility_elements(
             logger.error(f"[Step 12] No input_data provided")
             raise ValueError("Credibility elements are required for Step 12")
 
-        facts = input_data.get("facts", [])
         experiences = input_data.get("experiences", [])
         quotes = input_data.get("quotes", [])
 
-        logger.debug(f"[Step 12] Received {len(facts)} facts, {len(experiences)} experiences, {len(quotes)} quotes")
+        logger.debug(f"[Step 12] Received {len(experiences)} experiences, {len(quotes)} quotes")
 
         # Check if proceeding with fewer inputs
         proceed_with_fewer = input_data.get("proceed_with_fewer", False)
@@ -947,14 +1075,6 @@ async def execute_step12_credibility_elements(
 
         # Validate minimum requirements with fewer inputs option
         warnings = []
-
-        if len(facts) < 5:
-            if proceed_with_fewer and fewer_inputs_reason:
-                logger.warning(f"[Step 12] Proceeding with fewer facts ({len(facts)}): {fewer_inputs_reason}")
-                warnings.append(f"Proceeded with {len(facts)} facts (minimum 5 recommended)")
-            else:
-                logger.error(f"[Step 12] Insufficient facts: {len(facts)} (minimum 5)")
-                raise ValueError("Minimum 5 facts/statistics with sources required")
 
         if len(experiences) < 3:
             if proceed_with_fewer and fewer_inputs_reason:
@@ -967,14 +1087,12 @@ async def execute_step12_credibility_elements(
         logger.info(f"[Step 12] Validated credibility elements successfully")
 
         result = {
-            "facts": facts,
             "experiences": experiences,
             "quotes": quotes,
-            "fact_count": len(facts),
             "experience_count": len(experiences),
             "quote_count": len(quotes),
-            "summary": f"Collected {len(facts)} facts, {len(experiences)} experiences, {len(quotes)} quotes",
-            "human_action": "Provided credibility elements with sources",
+            "summary": f"Collected {len(experiences)} first-person experiences, {len(quotes)} expert quotes",
+            "human_action": "Provided first-person experiences and expert quotes",
             "proceeded_with_fewer": proceed_with_fewer,
             "fewer_inputs_reason": fewer_inputs_reason if proceed_with_fewer else None
         }
@@ -1071,17 +1189,19 @@ async def execute_step14_landing_page_eval(
 
         # Suggest landing pages with GPT-4
         logger.debug(f"[Step 14] Sending data to OpenAI for landing page suggestions")
-        suggestions = await openai_service.suggest_landing_pages(
+        suggestions, llm_prompt = await openai_service.suggest_landing_pages(
             primary_keyword,
             outline,
             business_context,
             blog_type
         )
         logger.info(f"[Step 14] Generated {len(suggestions.get('landing_page_options', []))} landing page suggestions")
+        logger.debug(f"[Step 14] LLM prompt captured ({len(llm_prompt)} chars) for UI display")
 
         result = {
             "landing_page_suggestions": suggestions.get("landing_page_options", []),
             "count": len(suggestions.get("landing_page_options", [])),
+            "llm_prompt": llm_prompt,  # Full prompt for UI display with variable highlighting
             "summary": f"Suggested {len(suggestions.get('landing_page_options', []))} landing page opportunities"
         }
 
@@ -1149,7 +1269,7 @@ async def execute_step15_infographic_planning(
 
         # Suggest infographics with GPT-4 (holistic approach)
         logger.debug(f"[Step 15] Sending data to OpenAI for holistic infographic suggestions")
-        suggestions = await openai_service.suggest_infographics(
+        suggestions, llm_prompt = await openai_service.suggest_infographics(
             primary_keyword=primary_keyword,
             primary_intent=primary_intent,
             recommended_direction=recommended_direction,
@@ -1162,11 +1282,13 @@ async def execute_step15_infographic_planning(
             contextual_qa=contextual_qa
         )
         logger.info(f"[Step 15] Generated {len(suggestions.get('infographic_options', []))} infographic suggestions")
+        logger.debug(f"[Step 15] LLM prompt captured ({len(llm_prompt)} chars) for UI display")
 
         result = {
             "infographic_suggestions": suggestions.get("infographic_options", []),
             "count": len(suggestions.get("infographic_options", [])),
-            "summary": f"Suggested {len(suggestions.get('infographic_options', []))} infographic ideas"
+            "llm_prompt": llm_prompt,  # Full prompt for UI display with variable highlighting
+            "summary": f"Suggested {len(suggestions.get('infographic_options', []))} infographic ideas- You must add one infographic on one of these"
         }
 
         logger.info(f"[Step 15] Successfully completed infographic planning (session: {session_id})")
@@ -1219,7 +1341,7 @@ async def execute_step16_title_creation(
 
         # Generate titles with GPT-4
         logger.debug(f"[Step 16] Sending data to OpenAI for title generation")
-        titles = await openai_service.generate_titles(
+        titles, llm_prompt = await openai_service.generate_titles(
             primary_keyword,
             outline,
             "solution-oriented",
@@ -1229,10 +1351,12 @@ async def execute_step16_title_creation(
             contextual_qa=contextual_qa
         )
         logger.info(f"[Step 16] Generated {len(titles.get('title_options', []))} title options")
+        logger.debug(f"[Step 16] LLM prompt captured ({len(llm_prompt)} chars) for UI display")
 
         result = {
             "title_options": titles.get("title_options", []),
             "count": len(titles.get("title_options", [])),
+            "llm_prompt": llm_prompt,  # Full prompt for UI display with variable highlighting
             "summary": f"Generated {len(titles.get('title_options', []))} title options"
         }
 
@@ -1358,7 +1482,7 @@ async def execute_step17_blog_draft(
 
         # Generate draft with GPT-4
         logger.debug(f"[Step 17] Sending all data to OpenAI for blog draft generation")
-        draft = await openai_service.generate_blog_draft(
+        draft, llm_prompt = await openai_service.generate_blog_draft(
             title,
             outline,
             collected_data,
@@ -1377,6 +1501,7 @@ async def execute_step17_blog_draft(
 
         word_count = len(draft.split())
         logger.info(f"[Step 17] Generated draft with {word_count} words")
+        logger.debug(f"[Step 17] LLM prompt captured ({len(llm_prompt)} chars) for UI display")
 
         # Save draft to file
         session_path = workflow_service._get_session_path(session_id)
@@ -1391,6 +1516,7 @@ async def execute_step17_blog_draft(
             "draft": draft,  # Keep for backward compatibility
             "word_count": word_count,
             "draft_file": str(draft_file.name),
+            "llm_prompt": llm_prompt,  # Full prompt for UI display with variable highlighting
             "summary": f"Generated blog draft with {word_count} words. Saved to {draft_file.name}"
         }
 
@@ -1405,15 +1531,35 @@ async def execute_step17_blog_draft(
 async def execute_step18_faq_accordion(
     workflow_service,
     session_id: str,
-    state: Dict[str, Any]
+    state: Dict[str, Any],
+    input_data: Optional[Dict[str, Any]]
 ) -> Dict[str, Any]:
     """
-    Step 18: FAQ Accordion Section.
-    Generates FAQs based on keywords and content.
+    Step 18: FAQ Accordion Section (Two-Phase).
+    Phase 1: User provides FAQ questions + answer hints.
+    Phase 2: AI generates complete answers for user FAQs + 3 additional FAQs.
     """
     primary_keyword = state["primary_keyword"]
     blog_type = state.get("blog_type", "")
+
+    # Extract user-provided FAQ hints from input_data
+    user_faq_hints = input_data.get("user_faqs", []) if input_data else []
+
+    # Validate user_faq_hints structure
+    if user_faq_hints:
+        if not isinstance(user_faq_hints, list):
+            raise ValueError("user_faqs must be a list")
+
+        for i, faq in enumerate(user_faq_hints):
+            if not isinstance(faq, dict):
+                raise ValueError(f"Invalid FAQ structure at index {i}. Each FAQ must be a dictionary.")
+            if 'question' not in faq or 'hints' not in faq:
+                raise ValueError(f"Invalid FAQ structure at index {i}. Each FAQ must have 'question' and 'hints' fields.")
+            if not isinstance(faq['question'], str) or not isinstance(faq['hints'], str):
+                raise ValueError(f"Invalid FAQ structure at index {i}. 'question' and 'hints' must be strings.")
+
     logger.info(f"[Step 18] Starting FAQ accordion generation for keyword: '{primary_keyword}' (session: {session_id})")
+    logger.info(f"[Step 18] User provided {len(user_faq_hints)} FAQ questions with hints")
 
     try:
         step5_data = state["steps"].get("5", {}).get("data", {})
@@ -1447,40 +1593,72 @@ async def execute_step18_faq_accordion(
             contextual_qa = "\n\n".join(qa_pairs)
             logger.info(f"[Step 18] Using {len(answers)} contextual Q&A for FAQ generation")
 
-        # Generate FAQs with GPT-4
-        logger.debug(f"[Step 18] Sending data to OpenAI for FAQ generation")
-        faqs = await openai_service.generate_faqs(
+        # Generate answers for user FAQs + 3 additional AI FAQs with GPT-4
+        logger.debug(f"[Step 18] Sending data to OpenAI for FAQ generation (answers for user FAQs + 3 AI FAQs)")
+        faq_result, llm_prompt = await openai_service.generate_faqs(
             primary_keyword,
             secondary_keywords,
             blog_content,
-            blog_type,
+            user_faq_hints=user_faq_hints,
+            blog_type=blog_type,
             expert_opinion=expert_opinion,
             writing_style=writing_style,
             contextual_qa=contextual_qa
         )
-        logger.info(f"[Step 18] Generated {len(faqs.get('faqs', []))} FAQ items")
+        user_faqs_with_answers = faq_result.get('user_faqs_with_answers', [])
+        ai_generated_faqs = faq_result.get('additional_faqs', [])
+        logger.info(f"[Step 18] AI generated answers for {len(user_faqs_with_answers)} user FAQs + {len(ai_generated_faqs)} additional FAQs")
+        logger.debug(f"[Step 18] LLM prompt captured ({len(llm_prompt)} chars) for UI display")
 
-        # Format as HTML accordion
+        # Add source tags to FAQs for identification
+        user_faqs_tagged = [{"source": "user", **faq} for faq in user_faqs_with_answers]
+        ai_faqs_tagged = [{"source": "ai", **faq} for faq in ai_generated_faqs]
+
+        # Combine user FAQs + AI FAQs
+        all_faqs = user_faqs_tagged + ai_faqs_tagged
+        logger.debug(f"[Step 18] Combined {len(user_faqs_with_answers)} user FAQs (with AI-generated answers) + {len(ai_generated_faqs)} AI FAQs = {len(all_faqs)} total")
+
+        # Format as HTML accordion with source attribution
         faq_html = "<div class='faq-accordion'>\n"
-        for faq in faqs.get("faqs", []):
-            faq_html += f"""
-  <div class='faq-item'>
-    <h3 class='faq-question'>{faq.get('question', '')}</h3>
+
+        # User FAQs section
+        if user_faqs_tagged:
+            faq_html += "  <!-- User-Provided FAQs -->\n"
+            for faq in user_faqs_tagged:
+                faq_html += f"""  <div class='faq-item' data-source='user'>
+    <h3 class='faq-question'><span class='faq-badge user-badge'>Your FAQ</span> {faq.get('question', '')}</h3>
     <div class='faq-answer'>{faq.get('answer', '')}</div>
   </div>
 """
+
+        # AI FAQs section
+        if ai_faqs_tagged:
+            faq_html += "  <!-- AI-Generated FAQs -->\n"
+            for faq in ai_faqs_tagged:
+                faq_html += f"""  <div class='faq-item' data-source='ai'>
+    <h3 class='faq-question'><span class='faq-badge ai-badge'>AI-Generated</span> {faq.get('question', '')}</h3>
+    <div class='faq-answer'>{faq.get('answer', '')}</div>
+  </div>
+"""
+
         faq_html += "</div>"
 
-        logger.debug(f"[Step 18] Formatted FAQs as HTML accordion")
+        logger.debug(f"[Step 18] Formatted FAQs as HTML accordion with source attribution")
 
         result = {
-            "faqs": faqs.get("faqs", []),
+            "user_faqs": user_faqs_tagged,
+            "ai_faqs": ai_faqs_tagged,
+            "faqs": all_faqs,  # Combined list
+            "user_count": len(user_faqs_with_answers),
+            "ai_count": len(ai_generated_faqs),
+            "total_count": len(all_faqs),
             "faq_html": faq_html,
-            "count": len(faqs.get("faqs", [])),
-            "summary": f"Generated {len(faqs.get('faqs', []))} FAQ items with HTML accordion"
+            "llm_prompt": llm_prompt,  # Full prompt for UI display with variable highlighting
+            "summary": f"Generated answers for {len(user_faqs_with_answers)} user FAQs + {len(ai_generated_faqs)} additional AI FAQs (Total: {len(all_faqs)} FAQs)"
         }
 
         logger.info(f"[Step 18] Successfully completed FAQ accordion generation (session: {session_id})")
+        logger.info(f"[Step 18] Final counts - User FAQs: {len(user_faqs_with_answers)}, AI FAQs: {len(ai_generated_faqs)}, Total: {len(all_faqs)}")
         return result
 
     except Exception as e:
@@ -1537,7 +1715,7 @@ async def execute_step19_meta_description(
 
         # Generate meta description with GPT-4
         logger.debug(f"[Step 19] Sending data to OpenAI for meta description generation")
-        meta_desc = await openai_service.generate_meta_description(
+        meta_desc, llm_prompt = await openai_service.generate_meta_description(
             title,
             primary_keyword,
             secondary_keywords,
@@ -1552,11 +1730,13 @@ async def execute_step19_meta_description(
         within_limit = 150 <= char_count <= 160
 
         logger.info(f"[Step 19] Generated meta description ({char_count} chars, within limit: {within_limit})")
+        logger.debug(f"[Step 19] LLM prompt captured ({len(llm_prompt)} chars) for UI display")
 
         result = {
             "meta_description": meta_desc,
             "character_count": char_count,
             "within_limit": within_limit,
+            "llm_prompt": llm_prompt,  # Full prompt for UI display with variable highlighting
             "summary": f"Generated meta description ({char_count} characters)"
         }
 
@@ -1591,8 +1771,9 @@ async def execute_step20_ai_signal_removal(
 
         # Clean with GPT-4
         logger.debug(f"[Step 20] Sending draft to OpenAI for AI signal removal")
-        cleaned = await openai_service.remove_ai_signals(blog_content)
+        cleaned, llm_prompt = await openai_service.remove_ai_signals(blog_content)
         logger.info(f"[Step 20] Removed AI signals. Made {len(cleaned.get('changes_made', []))} changes")
+        logger.debug(f"[Step 20] LLM prompt captured ({len(llm_prompt)} chars) for UI display")
 
         # Save cleaned version
         session_path = workflow_service._get_session_path(session_id)
@@ -1608,6 +1789,7 @@ async def execute_step20_ai_signal_removal(
             "warnings": cleaned.get("warnings", []),
             "change_count": len(cleaned.get("changes_made", [])),
             "cleaned_file": str(cleaned_file.name),
+            "llm_prompt": llm_prompt,  # Full prompt for UI display with variable highlighting
             "summary": f"Removed AI signals. Made {len(cleaned.get('changes_made', []))} changes. Saved to {cleaned_file.name}"
         }
 
@@ -1619,25 +1801,26 @@ async def execute_step20_ai_signal_removal(
         raise
 
 
-async def execute_step21_final_review(
+async def execute_step22_final_review(
     workflow_service,
     session_id: str,
     state: Dict[str, Any],
     input_data: Optional[Dict[str, Any]]
 ) -> Dict[str, Any]:
     """
-    Step 21: Final Review Checklist (Human).
-    Human confirms completion of final tasks.
+    Step 22: Final Review Checklist (Human).
+    Reference checklist for post-export editing and uploading.
+    Collects feedback on bugs or improvements for the blog writing tool.
     """
-    logger.info(f"[Step 21] Starting final review checklist (session: {session_id})")
+    logger.info(f"[Step 22] Starting final review checklist (session: {session_id})")
 
     try:
         if not input_data:
-            logger.error(f"[Step 21] No checklist data provided")
-            raise ValueError("Checklist completion data required for Step 21")
+            logger.error(f"[Step 22] No checklist data provided")
+            raise ValueError("Checklist completion data required for Step 22")
 
-        # Get notes (optional reviewer comments)
-        notes = input_data.get("notes", "")
+        # Get feedback on tool improvements (bugs, feature requests)
+        feedback = input_data.get("feedback", input_data.get("notes", ""))  # Backward compatible with 'notes'
 
         # Handle both data structures for backward compatibility:
         # 1. Frontend sends: { checklist_items: { "item1": true, "item2": false }, notes: "..." }
@@ -1651,7 +1834,7 @@ async def execute_step21_final_review(
             # Old format: array
             completed = input_data.get("completed_items", [])
 
-        logger.debug(f"[Step 21] Received {len(completed)} completed items")
+        logger.debug(f"[Step 22] Received {len(completed)} completed items")
 
         # Predefined checklist items
         predefined_items = [
@@ -1668,46 +1851,47 @@ async def execute_step21_final_review(
         missing_items = [item for item in predefined_items if item not in completed]
         all_complete = len(missing_items) == 0
 
-        logger.info(f"[Step 21] Checklist: {len(completed)}/{len(predefined_items)} items completed (all_complete: {all_complete})")
+        logger.info(f"[Step 22] Checklist: {len(completed)}/{len(predefined_items)} items completed (all_complete: {all_complete})")
         if missing_items:
-            logger.warning(f"[Step 21] Missing items: {', '.join(missing_items)}")
+            logger.warning(f"[Step 22] Missing items: {', '.join(missing_items)}")
 
-        if notes:
-            logger.info(f"[Step 21] Reviewer notes: {notes[:100]}...")
+        if feedback:
+            logger.info(f"[Step 22] Tool feedback provided: {feedback[:100]}...")
 
         result = {
             "checklist_items": predefined_items,
             "completed_items": completed,
             "missing_items": missing_items,
             "all_complete": all_complete,
-            "notes": notes,  # FIXED: Save notes for plagiarism checking
+            "feedback": feedback,  # Tool improvement feedback for reviewers
+            "notes": feedback,  # Backward compatibility alias
             "checklist_results": checklist_data,  # For frontend state restoration
-            "review_notes": notes,  # Alias for frontend consistency
+            "review_notes": feedback,  # Alias for frontend consistency
             "summary": f"Review checklist: {len(completed)}/{len(predefined_items)} items completed",
-            "human_action": "Completed final review checklist" + (f" with notes" if notes else "")
+            "human_action": "Completed final review checklist" + (f" with feedback" if feedback else "")
         }
 
-        logger.info(f"[Step 21] Successfully completed final review checklist (session: {session_id})")
+        logger.info(f"[Step 22] Successfully completed final review checklist (session: {session_id})")
         return result
 
     except Exception as e:
-        logger.error(f"[Step 21] Error during final review checklist: {str(e)}", exc_info=True)
+        logger.error(f"[Step 22] Error during final review checklist: {str(e)}", exc_info=True)
         raise
 
 
-async def execute_step22_export_archive(
+async def execute_step21_export_archive(
     workflow_service,
     session_id: str,
     state: Dict[str, Any]
 ) -> Dict[str, Any]:
     """
-    Step 22: Export & Archive.
-    Exports final blog, updates blog index, and saves user inputs for plagiarism checking.
+    Step 21: Export & Archive.
+    Exports final blog, updates blog index, saves user inputs for plagiarism checking, and marks session as completed.
     """
     from datetime import datetime, timezone
     from app.services.plagiarism_service import plagiarism_service
 
-    logger.info(f"[Step 22] Starting blog export and archive (session: {session_id})")
+    logger.info(f"[Step 21] Starting blog export and archive (session: {session_id})")
 
     try:
         # Gather final content
@@ -1721,8 +1905,8 @@ async def execute_step22_export_archive(
         meta_desc = step19_data.get("meta_description", "")
         faq_html = step18_data.get("faq_html", "")
 
-        logger.debug(f"[Step 22] Compiling final export with title: '{title}'")
-        logger.debug(f"[Step 22] Final content: {len(final_content)} chars, Meta desc: {len(meta_desc)} chars")
+        logger.debug(f"[Step 21] Compiling final export with title: '{title}'")
+        logger.debug(f"[Step 21] Final content: {len(final_content)} chars, Meta desc: {len(meta_desc)} chars")
 
         # Create markdown export
         export_content = f"""---
@@ -1748,24 +1932,24 @@ date: {datetime.now(timezone.utc).strftime('%Y-%m-%d')}
         # Save export file
         session_path = workflow_service._get_session_path(session_id)
         export_file = session_path / f"blog_export_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.md"
-        logger.debug(f"[Step 22] Saving export file to {export_file}")
+        logger.debug(f"[Step 21] Saving export file to {export_file}")
         await write_text_file(export_file, export_content)
 
         # Extract and save user inputs to plagiarism database
-        logger.info(f"[Step 22] Saving user inputs to plagiarism database for session {session_id}")
+        logger.info(f"[Step 21] Saving user inputs to plagiarism database for session {session_id}")
         try:
             await plagiarism_service.save_user_inputs_to_db(session_id)
-            logger.info(f"[Step 22] User inputs saved to plagiarism database successfully")
+            logger.info(f"[Step 21] User inputs saved to plagiarism database successfully")
         except Exception as plag_error:
-            logger.error(f"[Step 22] Failed to save user inputs to plagiarism database: {plag_error}")
+            logger.error(f"[Step 21] Failed to save user inputs to plagiarism database: {plag_error}")
             # Don't fail the entire step if plagiarism DB update fails
 
         # Mark session as completed
-        logger.debug(f"[Step 22] Marking session as completed")
+        logger.debug(f"[Step 21] Marking session as completed")
         await workflow_service.update_session_state(session_id, {"status": "completed"})
 
         word_count = len(final_content.split())
-        logger.info(f"[Step 22] Blog exported successfully ({word_count} words)")
+        logger.info(f"[Step 21] Blog exported successfully ({word_count} words)")
 
         result = {
             "export_file": str(export_file.name),
@@ -1775,9 +1959,9 @@ date: {datetime.now(timezone.utc).strftime('%Y-%m-%d')}
             "summary": f"Blog exported successfully to {export_file.name}. Session completed."
         }
 
-        logger.info(f"[Step 22] Successfully completed blog export and archive (session: {session_id})")
+        logger.info(f"[Step 21] Successfully completed blog export and archive (session: {session_id})")
         return result
 
     except Exception as e:
-        logger.error(f"[Step 22] Error during blog export and archive: {str(e)}", exc_info=True)
+        logger.error(f"[Step 21] Error during blog export and archive: {str(e)}", exc_info=True)
         raise

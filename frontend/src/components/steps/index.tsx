@@ -24,14 +24,14 @@ import Step17BlogDraft from './Step17BlogDraft';
 import Step18FAQAccordion from './Step18FAQAccordion';
 import Step19MetaDescription from './Step19MetaDescription';
 import Step20AISignalRemoval from './Step20AISignalRemoval';
-import Step21FinalReview from './Step21FinalReview';
-import Step22ExportArchive from './Step22ExportArchive';
+import Step21ExportArchive from './Step21ExportArchive';
+import Step22FinalReview from './Step22FinalReview';
 import StepPlaceholder from './StepPlaceholder';
 
 // Step metadata
 export const STEP_METADATA = {
   1: { name: 'Search Intent Analysis', owner: 'AI' as const, description: 'AI analyzes SERP results to identify primary search intent' },
-  2: { name: 'Competitor Content Fetch', owner: 'AI' as const, description: 'AI fetches top 5 competitor pages using Tavily API' },
+  2: { name: 'Competitor Content Fetch', owner: 'AI' as const, description: 'AI fetches selected competitor pages using Tavily API' },
   3: { name: 'Competitor Analysis', owner: 'AI' as const, description: 'AI analyzes competitor content to identify patterns' },
   4: { name: 'Expert Opinion/ QnA / Webinar/Podcast Points', owner: 'AI+Human' as const, description: 'Human uploads transcript, AI extracts key points' },
   5: { name: 'Secondary Keywords', owner: 'Human' as const, description: 'Human researches and adds 8-12 secondary keywords' },
@@ -50,20 +50,21 @@ export const STEP_METADATA = {
   18: { name: 'FAQ Accordion', owner: 'AI' as const, description: 'AI generates 6-10 FAQs' },
   19: { name: 'Meta Description', owner: 'AI' as const, description: 'AI creates 150-160 character meta description' },
   20: { name: 'AI Signal Removal', owner: 'AI' as const, description: 'AI removes AI-written signals from content' },
-  21: { name: 'Final Review Checklist', owner: 'Human' as const, description: 'Human performs final review against checklist' },
-  22: { name: 'Export & Archive', owner: 'AI' as const, description: 'AI exports final blog and archives session' },
+  21: { name: 'Export & Archive', owner: 'AI' as const, description: 'AI exports final blog, saves to plagiarism DB, marks session complete' },
+  22: { name: 'Final Review Checklist', owner: 'Human' as const, description: 'Reference checklist for post-export editing and uploading' },
 };
 
 interface StepComponentProps {
   sessionId: string;
   stepNumber: number;
   initialData?: any;
+  schemaVersion?: number;  // Session schema version for backward compatibility
 }
 
 /**
  * Get the appropriate step component for a given step number
  */
-export function getStepComponent({ sessionId, stepNumber, initialData }: StepComponentProps) {
+export function getStepComponent({ sessionId, stepNumber, initialData, schemaVersion }: StepComponentProps) {
   const metadata = STEP_METADATA[stepNumber as keyof typeof STEP_METADATA];
 
   if (!metadata) {
@@ -133,10 +134,36 @@ export function getStepComponent({ sessionId, stepNumber, initialData }: StepCom
       return <Step20AISignalRemoval sessionId={sessionId} initialData={initialData} />;
 
     case 21:
-      return <Step21FinalReview sessionId={sessionId} initialData={initialData} />;
+      // For old sessions (schema v1), hide this step
+      if (!schemaVersion || schemaVersion < 2) {
+        return (
+          <StepPlaceholder
+            sessionId={sessionId}
+            stepNumber={21}
+            stepName="Step Not Available"
+            owner="AI"
+            description="This step is not available for sessions created before the Step 21/22 swap. Your workflow ends at Step 20."
+            initialData={null}
+          />
+        );
+      }
+      return <Step21ExportArchive sessionId={sessionId} initialData={initialData} />;
 
     case 22:
-      return <Step22ExportArchive sessionId={sessionId} initialData={initialData} />;
+      // For old sessions (schema v1), hide this step
+      if (!schemaVersion || schemaVersion < 2) {
+        return (
+          <StepPlaceholder
+            sessionId={sessionId}
+            stepNumber={22}
+            stepName="Step Not Available"
+            owner="Human"
+            description="This step is not available for sessions created before the Step 21/22 swap. Your workflow ends at Step 20."
+            initialData={null}
+          />
+        );
+      }
+      return <Step22FinalReview sessionId={sessionId} initialData={initialData} />;
 
     default:
       // Fallback for invalid step numbers
@@ -175,7 +202,7 @@ export {
   Step18FAQAccordion,
   Step19MetaDescription,
   Step20AISignalRemoval,
-  Step21FinalReview,
-  Step22ExportArchive,
+  Step21ExportArchive,
+  Step22FinalReview,
   StepPlaceholder
 };

@@ -1,6 +1,6 @@
 /**
  * Step 2: Competitor Content Fetch
- * AI fetches top 5 competitor pages using Tavily API
+ * AI fetches selected competitor pages using Tavily API
  * Owner: AI
  */
 
@@ -147,14 +147,14 @@ export default function Step2CompetitorFetch({ sessionId, initialData }: Step2Pr
       stepNumber={2}
       stepName="Competitor Content Fetch"
       owner="AI"
-      description="AI fetches the top 5 competitor pages for your keyword using Tavily Search API to analyze their content structure and approach."
+      description="AI fetches selected competitor pages for your keyword using Tavily Search API to analyze their content structure and approach."
     >
       {/* Instructions */}
       {!executionComplete && !isExecuting && (
         <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
           <h3 className="font-semibold text-blue-900 mb-2">What happens in this step:</h3>
           <ul className="list-disc list-inside text-blue-800 space-y-1 text-sm">
-            <li>AI fetches content from top 5 ranking pages for your keyword</li>
+            <li>AI fetches content from selected pages for your keyword</li>
             <li>Extracts full text content, headings, and page structure</li>
             <li>Calculates word count and domain authority indicators</li>
             <li>Provides comprehensive data for competitor analysis in Step 3</li>

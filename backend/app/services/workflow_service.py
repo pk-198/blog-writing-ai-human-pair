@@ -48,8 +48,8 @@ from app.services.step_implementations import (
     execute_step18_faq_accordion,
     execute_step19_meta_description,
     execute_step20_ai_signal_removal,
-    execute_step21_final_review,
-    execute_step22_export_archive
+    execute_step21_export_archive,
+    execute_step22_final_review
 )
 
 logger = setup_logger(__name__)
@@ -80,8 +80,8 @@ class WorkflowService:
             18: "FAQ Accordion",
             19: "Meta Description",
             20: "AI Signal Removal",
-            21: "Final Review Checklist",
-            22: "Export & Archive"
+            21: "Export & Archive",
+            22: "Final Review Checklist"
         }
 
     def _get_session_path(self, session_id: str) -> Path:
@@ -207,8 +207,8 @@ class WorkflowService:
 
     def _get_step_owner(self, step_number: int) -> str:
         """Get step owner type."""
-        ai_steps = {1, 2, 3, 6, 7, 8, 14, 15, 16, 17, 18, 19, 20, 22}
-        human_steps = {5, 9, 10, 11, 12, 13, 21}
+        ai_steps = {1, 2, 3, 6, 7, 8, 14, 15, 16, 17, 18, 19, 20, 21}  # 21=Export & Archive (AI)
+        human_steps = {5, 9, 10, 11, 12, 13, 22}  # 22=Final Review Checklist (Human)
         mixed_steps = {4}  # Webinar points
 
         if step_number in ai_steps:
@@ -245,6 +245,21 @@ class WorkflowService:
         try:
             # Load current state to preserve existing data (important for multi-phase steps like Step 4)
             state = await self.get_session_state(session_id)
+
+            # Check if Step 22 is being executed on a completed session (Step 22 is view-only after completion)
+            if step_number == 22 and state.get("status") == "completed":
+                logger.warning(f"[Step 22] Attempted to execute Step 22 on completed session {session_id}")
+                raise ValueError("Step 22 (Final Review Checklist) cannot be executed on a completed session. It is view-only after Step 21 completion.")
+
+            # Check if old session (schema v1) is trying to execute new Steps 21-22
+            schema_version = state.get("schema_version", 1)
+            if schema_version < 2 and step_number in [21, 22]:
+                logger.warning(f"[Step {step_number}] Old session (schema v{schema_version}) attempted to execute Step {step_number}")
+                raise ValueError(
+                    f"Step {step_number} is not available for sessions created before the schema v2 update. "
+                    f"This session uses schema v{schema_version}. Workflow for this session ends at Step 20."
+                )
+
             existing_data = state["steps"].get(str(step_number), {}).get("data", {})
 
             # Mark step as in_progress (preserve existing data to avoid data loss)
@@ -289,15 +304,15 @@ class WorkflowService:
             elif step_number == 17:
                 result = await execute_step17_blog_draft(self, session_id, state)
             elif step_number == 18:
-                result = await execute_step18_faq_accordion(self, session_id, state)
+                result = await execute_step18_faq_accordion(self, session_id, state, input_data)
             elif step_number == 19:
                 result = await execute_step19_meta_description(self, session_id, state)
             elif step_number == 20:
                 result = await execute_step20_ai_signal_removal(self, session_id, state)
             elif step_number == 21:
-                result = await execute_step21_final_review(self, session_id, state, input_data)
+                result = await execute_step21_export_archive(self, session_id, state)
             elif step_number == 22:
-                result = await execute_step22_export_archive(self, session_id, state)
+                result = await execute_step22_final_review(self, session_id, state, input_data)
             else:
                 raise ValueError(f"Invalid step number: {step_number}")
 

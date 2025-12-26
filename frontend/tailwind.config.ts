@@ -23,6 +23,18 @@ const config: Config = {
           500: '#a855f7',
           600: '#9333ea',
           700: '#7e22ce',
+        },
+        maroon: {
+          50: '#fff5f5',
+          100: '#ffe3e3',
+          200: '#ffc9c9',
+          300: '#ffa8a8',
+          400: '#ff8787',
+          500: '#ff6b6b',
+          600: '#fa5252',
+          700: '#8b1a1a',  // Variable values in prompts
+          800: '#7d1414',
+          900: '#5c0a0a',  // Variable names in prompts (darkest)
         }
       },
       animation: {

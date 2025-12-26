@@ -13,6 +13,7 @@ import SuccessBanner from '../shared/SuccessBanner';
 import ErrorBanner from '../shared/ErrorBanner';
 import ProgressAnimation from '../shared/ProgressAnimation';
 import StepNavigation from '../shared/StepNavigation';
+import PromptDisplay from '../shared/PromptDisplay';
 import { api } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 
@@ -293,6 +294,7 @@ export default function Step20AISignalRemoval({ sessionId, initialData }: Step20
           <li>• "Moreover", "Furthermore", excessive transitional phrases</li>
           <li>• Overly formal language and robotic sentence structures</li>
           <li>• Repetitive phrases and clichés</li>
+          <li>• Remove em dash (—)  and smart/curved quotes ‘  “ etc</li>
           <li>• Unnecessary hedging words ("arguably", "essentially")</li>
         </ul>
       </div>
@@ -324,6 +326,13 @@ export default function Step20AISignalRemoval({ sessionId, initialData }: Step20
             stepName="AI Signal Removal"
             message="Humanized content and removed AI detection signals"
           />
+
+          {/* LLM Prompt Display */}
+          <PromptDisplay
+            prompt={stepData?.llm_prompt}
+            title="LLM Prompt Sent to OpenAI"
+          />
+
           {renderResults()}
         </div>
       )}

@@ -15,6 +15,7 @@ import SuccessBanner from '../shared/SuccessBanner';
 import ErrorBanner from '../shared/ErrorBanner';
 import ProgressAnimation from '../shared/ProgressAnimation';
 import StepNavigation from '../shared/StepNavigation';
+import PromptDisplay from '../shared/PromptDisplay';
 import { api } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
@@ -305,6 +306,13 @@ export default function Step19MetaDescription({ sessionId, initialData }: Step19
             stepName="Meta Description"
             message="Generated SEO-optimized meta description"
           />
+
+          {/* LLM Prompt Display */}
+          <PromptDisplay
+            prompt={stepData?.llm_prompt}
+            title="LLM Prompt Sent to OpenAI"
+          />
+
           {renderMetaDescription()}
         </div>
       )}

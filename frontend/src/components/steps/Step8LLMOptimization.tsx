@@ -13,6 +13,7 @@ import SuccessBanner from '../shared/SuccessBanner';
 import ErrorBanner from '../shared/ErrorBanner';
 import ProgressAnimation from '../shared/ProgressAnimation';
 import StepNavigation from '../shared/StepNavigation';
+import PromptDisplay from '../shared/PromptDisplay';
 import { api } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 
@@ -99,6 +100,12 @@ export default function Step8LLMOptimization({ sessionId, initialData }: Step8Pr
           stepNumber={8}
           stepName="LLM Optimization Planning"
           message="Created optimization plan for AI/GEO visibility"
+        />
+
+        {/* LLM Prompt Display */}
+        <PromptDisplay
+          prompt={stepData?.llm_prompt}
+          title="LLM Prompt Sent to OpenAI"
         />
 
         {/* Overview */}

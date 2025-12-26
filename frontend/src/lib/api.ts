@@ -31,6 +31,7 @@ interface SessionResponse {
   status: string;
   primary_keyword: string;
   blog_type: string;
+  schema_version?: number;
 }
 
 interface StepExecuteRequest {
@@ -61,6 +62,41 @@ interface WorkflowStatusResponse {
   primary_keyword: string;
   created_at: string;
   updated_at: string;
+}
+
+interface SessionListItem {
+  session_id: string;
+  primary_keyword: string;
+  blog_type: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  current_step: number;
+  total_steps: number;
+  progress_percentage: number;
+  steps_completed: number;
+  steps_skipped: number;
+  schema_version?: number;  // 1 = old (Steps 21=Checklist, 22=Export), 2 = new (swapped)
+}
+
+interface PaginationInfo {
+  page: number;
+  page_size: number;
+  total_count: number;
+  total_pages: number;
+  has_next: boolean;
+  has_prev: boolean;
+}
+
+interface SessionError {
+  session_id: string;
+  error: string;
+}
+
+interface SessionListResponse {
+  sessions: SessionListItem[];
+  pagination: PaginationInfo;
+  errors: SessionError[];
 }
 
 class ApiClient {
@@ -183,6 +219,35 @@ class ApiClient {
   }
 
   /**
+   * List all sessions with pagination (for Creator history view)
+   */
+  async listCreatorSessions(
+    statusFilter?: string,
+    page: number = 1,
+    pageSize: number = 5,
+    token?: string
+  ): Promise<SessionListResponse> {
+    const params = new URLSearchParams();
+    if (statusFilter) {
+      params.append('status_filter', statusFilter);
+    }
+    params.append('page', page.toString());
+    params.append('page_size', pageSize.toString());
+
+    const queryString = params.toString();
+    const endpoint = `/api/sessions?${queryString}`;
+
+    const response = await this.authenticatedRequest(endpoint, token || '');
+
+    if (!response.ok) {
+      const error: ApiError = await response.json();
+      throw new Error(error.detail || 'Failed to list sessions');
+    }
+
+    return response.json();
+  }
+
+  /**
    * Execute a specific workflow step
    */
   async executeStep(
@@ -211,8 +276,8 @@ class ApiClient {
       18: '/api/steps/18/faq-accordion',
       19: '/api/steps/19/meta-description',
       20: '/api/steps/20/ai-signal-removal',
-      21: '/api/steps/21/final-review',
-      22: '/api/steps/22/export-archive',
+      21: '/api/steps/21/export-archive',
+      22: '/api/steps/22/final-review',
     };
 
     const endpoint = stepEndpoints[stepNumber];
@@ -405,14 +470,20 @@ class ApiClient {
     dataPoints: Array<{ statistic: string; source: string }>,
     token: string,
     proceedWithFewer: boolean = false,
-    fewerInputsReason: string = ''
+    fewerInputsReason: string = '',
+    action: string = 'collect',
+    ideasCustomization: string = '',
+    promptsCustomization: string = ''
   ): Promise<StepResponse> {
     return this.executeStep(9, {
       session_id: sessionId,
       input_data: {
+        action,
         data_points: dataPoints,
         proceed_with_fewer: proceedWithFewer,
-        fewer_inputs_reason: fewerInputsReason
+        fewer_inputs_reason: fewerInputsReason,
+        ideas_customization: ideasCustomization,
+        prompts_customization: promptsCustomization
       }
     }, token);
   }
@@ -425,14 +496,18 @@ class ApiClient {
     tools: Array<{ name: string; features: string; url: string }>,
     token: string,
     proceedWithFewer: boolean = false,
-    fewerInputsReason: string = ''
+    fewerInputsReason: string = '',
+    action: string = 'collect',
+    customization: string = ''
   ): Promise<StepResponse> {
     return this.executeStep(10, {
       session_id: sessionId,
       input_data: {
+        action,
         tools,
         proceed_with_fewer: proceedWithFewer,
-        fewer_inputs_reason: fewerInputsReason
+        fewer_inputs_reason: fewerInputsReason,
+        customization
       }
     }, token);
   }
@@ -462,7 +537,7 @@ class ApiClient {
    */
   async executeStep12CredibilityElements(
     sessionId: string,
-    inputData: { facts: Array<{ fact: string; source: string }>, experiences: string[], quotes: string[] },
+    inputData: { experiences: string[], quotes: string[] },
     token: string,
     proceedWithFewer: boolean = false,
     fewerInputsReason: string = ''
@@ -543,10 +618,10 @@ class ApiClient {
   }
 
   /**
-   * Step 18: FAQ Accordion
+   * Step 18: FAQ Accordion (Two-Phase: User FAQs + AI FAQs)
    */
-  async executeStep18FAQAccordion(sessionId: string, token: string): Promise<StepResponse> {
-    return this.executeStep(18, { session_id: sessionId }, token);
+  async executeStep18FAQAccordion(sessionId: string, inputData: any, token: string): Promise<StepResponse> {
+    return this.executeStep(18, { session_id: sessionId, input_data: inputData }, token);
   }
 
   /**
@@ -564,25 +639,25 @@ class ApiClient {
   }
 
   /**
-   * Step 21: Final Review Checklist
+   * Step 21: Export & Archive
    */
-  async executeStep21FinalReview(
-    sessionId: string,
-    checklistItems: { [key: string]: boolean },
-    notes?: string,
-    token?: string
-  ): Promise<StepResponse> {
-    return this.executeStep(21, {
-      session_id: sessionId,
-      input_data: { checklist_items: checklistItems, notes }
-    }, token!);
+  async executeStep21ExportArchive(sessionId: string, token: string): Promise<StepResponse> {
+    return this.executeStep(21, { session_id: sessionId }, token);
   }
 
   /**
-   * Step 22: Export & Archive
+   * Step 22: Final Review Checklist
    */
-  async executeStep22ExportArchive(sessionId: string, token: string): Promise<StepResponse> {
-    return this.executeStep(22, { session_id: sessionId }, token);
+  async executeStep22FinalReview(
+    sessionId: string,
+    checklistItems: { [key: string]: boolean },
+    feedback?: string,
+    token?: string
+  ): Promise<StepResponse> {
+    return this.executeStep(22, {
+      session_id: sessionId,
+      input_data: { checklist_items: checklistItems, feedback }
+    }, token!);
   }
 
   /**
@@ -738,5 +813,9 @@ export type {
   StepExecuteRequest,
   StepSkipRequest,
   StepResponse,
-  WorkflowStatusResponse
+  WorkflowStatusResponse,
+  SessionListItem,
+  SessionListResponse,
+  PaginationInfo,
+  SessionError
 };

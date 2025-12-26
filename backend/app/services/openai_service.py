@@ -7,9 +7,11 @@ from openai import AsyncOpenAI
 from typing import Dict, List, Any, Optional
 import json
 import time
+from pathlib import Path
 
 from app.core.config import settings
 from app.core.logger import setup_logger, log_api_call
+from app.utils.file_ops import read_text_file
 
 logger = setup_logger(__name__)
 
@@ -23,16 +25,28 @@ class OpenAIService:
 
     def __init__(self):
         self.model = settings.OPENAI_MODEL  # Configurable via environment variable
+        self._last_full_prompt: Optional[str] = None  # Stores last prompt for retrieval by AI methods
         # self.temperature = 0.7
         # self.max_tokens = 20000
 
-    def _build_company_context(self) -> str:
+    async def _build_company_context(self) -> str:
         """
         Build company context string for LLM prompts.
-        Returns: Formatted company context with name, description, and competitors.
+        Loads business information from dograh.txt file.
+        Returns: Formatted company context with name, description, competitors, and business details.
         """
+        # Load business context from file
+        backend_dir = Path(__file__).parent.parent.parent.parent
+        business_file = backend_dir / "data" / "business_info" / "dograh.txt"
+        business_context = ""
+        if business_file.exists():
+            try:
+                business_context = await read_text_file(business_file)
+            except Exception as e:
+                logger.warning(f"Could not load business context: {e}")
+
         competitors_str = ", ".join(settings.COMPANY_COMPETITORS)
-        return f"\n\nOn a different note, the blog is being written by and for the company {settings.COMPANY_NAME}, which is {settings.COMPANY_DESCRIPTION}. And some of our competitors are {competitors_str}."
+        return f"\n\nOn a different note, the blog is being written by and for the company {settings.COMPANY_NAME}, which is {settings.COMPANY_DESCRIPTION}. And some of our competitors are {competitors_str}. Here's a little bit about the company : {business_context}"
 
     async def _call_gpt4(
         self,
@@ -53,7 +67,7 @@ class OpenAIService:
             json_mode: Whether to force JSON response
 
         Returns:
-            GPT-5.2 response text
+            GPT-5.2 response text (full prompt stored in self._last_full_prompt)
         """
         start_time = time.time()
 
@@ -92,6 +106,16 @@ class OpenAIService:
             else:
                 logger.info(f"OpenAI API Response: {response_content}")
 
+            # Build full prompt for storage (for UI display and auditing)
+            full_prompt = f"""SYSTEM PROMPT:
+{system_prompt}
+
+USER PROMPT:
+{user_prompt}"""
+
+            # Store prompt in instance variable for retrieval by AI methods
+            self._last_full_prompt = full_prompt
+
             return response_content
 
         except Exception as e:
@@ -106,7 +130,7 @@ class OpenAIService:
         primary_keyword: str,
         serp_results: List[Dict],
         past_blogs: List[str]
-    ) -> Dict[str, Any]:
+    ) -> tuple[Dict[str, Any], str]:
         """Analyze search intent from SERP results."""
         system_prompt = """You are an SEO expert analyzing search intent patterns.
 
@@ -115,7 +139,7 @@ Analyze the SERP results and return EXACTLY this JSON structure:
 {
   "intents": [
     {
-      "type": "informational|commercial|transactional|navigational",
+      "type": "Problem-solution blogs – [Specific pain point]: causes, fixes, and prevention  | Teardown/breakdown blogs – How [known company] does X (reverse engineering) | Benchmark/data blogs – Original research, industry stats (linkbait) | Template/playbook blogs – Free [X] template + how to use it | Migration blogs – How to switch from X to Y | Integration blogs – How to connect X with Y | Tools listing/Review/roundup blogs – Best [category] tools in 2025|  Use case/ Case study blog: How [persona] uses [product] for [specific outcome] | Alternative blogs | Comparison blogs",
       "percentage": 50,
       "evidence": "Brief explanation from SERP analysis"
     }
@@ -124,27 +148,31 @@ Analyze the SERP results and return EXACTLY this JSON structure:
     "Common pattern 1 found in top results",
     "Common pattern 2 found in top results"
   ],
-  "recommended_intent": "informational|commercial|transactional|navigational",
-  "recommended_direction": "Detailed recommendation for which intent to pursue and why",
+  "recommended_intent": "Problem-solution blogs – [Specific pain point]: causes, fixes, and prevention  | Teardown/breakdown blogs – How [known company] does X (reverse engineering) | Benchmark/data blogs – Original research, industry stats (linkbait) | Template/playbook blogs – Free [X] template + how to use it | Migration blogs – How to switch from X to Y | Integration blogs – How to connect X with Y | Tools listing/Review/roundup blogs – Best [category] tools in 2025|  Use case/ Case study blog: How [persona] uses [product] for [specific outcome] | Alternative blogs | Comparison blogs",
+  "recommended_direction": "Detailed recommendation for which intent to pursue and why- in simple plan and easily understandable english",
   "duplicates_existing": false,
   "duplication_notes": "Explanation if any past blogs cover similar topics, or empty string if none"
 }
 
-IMPORTANT: Use these exact field names. The intents array must contain at least one intent object. Return only valid JSON."""
+IMPORTANT: Use these exact field names. The intents array must contain at least one intent object. Use simple English. Avoid fancy words. Return only valid JSON."""
 
-        user_prompt = f"""Primary Keyword: {primary_keyword}
+        # Mark variables for frontend highlighting
+        serp_json = json.dumps(serp_results, indent=2)
+        past_blogs_text = chr(10).join(past_blogs)
+
+        user_prompt = f"""Primary Keyword: {{{{PRIMARY_KEYWORD:{primary_keyword}}}}}
 
 SERP Results (top 10):
-{json.dumps(serp_results, indent=2)}
+{{{{SERP_RESULTS:{serp_json}}}}}
 
 Past Blogs (titles):
-{chr(10).join(past_blogs)}
+{{{{PAST_BLOGS:{past_blogs_text}}}}}
 
 Analyze the search intent patterns and recommend which intent to pursue."""
 
         response = await self._call_gpt4(system_prompt, user_prompt, json_mode=True)
         try:
-            return json.loads(response)
+            return json.loads(response), self._last_full_prompt
         except json.JSONDecodeError as e:
             logger.error(f"OpenAI JSON parse error: {e}")
             logger.debug(f"Raw response: {response[:500]}")
@@ -155,7 +183,7 @@ Analyze the search intent patterns and recommend which intent to pursue."""
         self,
         primary_keyword: str,
         competitor_content: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
+    ) -> tuple[Dict[str, Any], str]:
         """Analyze competitor content to identify patterns."""
         system_prompt = """You are a content strategist analyzing competitor content.
 
@@ -163,35 +191,38 @@ Analyze the competitor content and return EXACTLY this JSON structure:
 
 {
   "quintessential_elements": [
-    "Element 1 present in ALL top results (must-have)",
-    "Element 2 present in ALL top results (must-have)"
+    "Element 1 present in ALL top results (must-have)- in simple english",
+    "Element 2 present in ALL top results (must-have)- in simple english"
   ],
   "differentiators": [
-    "Unique element 1 that adds credibility",
-    "Unique element 2 that adds credibility"
+    "Unique element 1 that adds credibility- in simple english",
+    "Unique element 2 that adds credibility- in simple english"
   ],
   "recommended_sections": [
-    "Section 1 to include/recreate",
-    "Section 2 to include/recreate"
+    "Section 1 to include/recreate- in simple english",
+    "Section 2 to include/recreate- in simple english"
   ],
   "skip_sections": [
-    "Competitor-specific section 1 to skip",
-    "Competitor-specific section 2 to skip"
+    "Competitor-specific section 1 to skip- in simple english",
+    "Competitor-specific section 2 to skip- in simple english"
   ]
 }
 
-IMPORTANT: Use these exact field names. Each array should contain at least one item. Return only valid JSON."""
+IMPORTANT: Use these exact field names. Each array should contain at least one item. Use simple English. Avoid fancy words. Return only valid JSON."""
 
-        user_prompt = f"""Keyword: {primary_keyword}
+        # Mark variables for frontend highlighting
+        competitor_json = json.dumps(competitor_content[:5], indent=2)
+
+        user_prompt = f"""Keyword: {{{{PRIMARY_KEYWORD:{primary_keyword}}}}}
 
 Competitor Content:
-{json.dumps(competitor_content[:5], indent=2)}
+{{{{COMPETITOR_CONTENT:{competitor_json}}}}}
 
 Analyze what makes these top results successful."""
 
         response = await self._call_gpt4(system_prompt, user_prompt, json_mode=True)
         try:
-            return json.loads(response)
+            return json.loads(response), self._last_full_prompt
         except json.JSONDecodeError as e:
             logger.error(f"OpenAI JSON parse error: {e}")
             logger.debug(f"Raw response: {response[:500]}")
@@ -202,7 +233,7 @@ Analyze what makes these top results successful."""
         self,
         transcript: str,
         guest_info: Dict[str, str]
-    ) -> Dict[str, Any]:
+    ) -> tuple[Dict[str, Any], str]:
         """Extract key points from expert opinion/ webinar/podcast transcript."""
         system_prompt = """You are a content curator extracting key points from transcripts.
 
@@ -234,19 +265,24 @@ Extract key information and return EXACTLY this JSON structure:
   ]
 }
 
-IMPORTANT: Use these exact field names. Include 10-15 talking points. Return only valid JSON."""
+IMPORTANT: Use these exact field names. Include 10-15 talking points. Use simple English. Avoid fancy words. Return only valid JSON."""
+
+        # Mark variables for frontend highlighting
+        transcript_preview = transcript[:8000]
+        guest_name = guest_info.get('name', 'Unknown')
+        guest_role = guest_info.get('role', 'Unknown')
 
         user_prompt = f"""Transcript:
-{transcript[:8000]}
+{{{{TRANSCRIPT:{transcript_preview}}}}}
 
-Guest: {guest_info.get('name', 'Unknown')}
-Role: {guest_info.get('role', 'Unknown')}
+Guest: {{{{GUEST_NAME:{guest_name}}}}}
+Role: {{{{GUEST_ROLE:{guest_role}}}}}
 
 Extract the most valuable points for a blog post."""
 
         response = await self._call_gpt4(system_prompt, user_prompt, json_mode=True)
         try:
-            return json.loads(response)
+            return json.loads(response), self._last_full_prompt
         except json.JSONDecodeError as e:
             logger.error(f"OpenAI JSON parse error: {e}")
             logger.debug(f"Raw response: {response[:500]}")
@@ -263,7 +299,7 @@ Extract the most valuable points for a blog post."""
         intent_data: Dict[str, Any] = None,
         competitor_data: Dict[str, Any] = None,
         first_competitor_content: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
+    ) -> tuple[Dict[str, Any], str]:
         """Generate 3 highly relevant contextual questions to improve blog quality 10x based on competitor content analysis."""
         system_prompt = """You are an expert content strategist generating questions to extract deeper expertise.
 
@@ -274,42 +310,43 @@ Return EXACTLY this JSON structure:
 {
   "questions": [
     {
-      "question": "Clear, specific question",
+      "question": "Clear, specific question- in simple english and in around 20 words.",
       "rationale": "Why this question matters and how it improves the blog",
-      "example_answer": "Example of what a good answer might look like"
+      "example_answer": "Short Example of what a good answer might look like"
     },
     {
-      "question": "Clear, specific question",
+      "question": "Clear, specific question- in simple english and in around 20 words.",
       "rationale": "Why this question matters and how it improves the blog",
-      "example_answer": "Example of what a good answer might look like"
+      "example_answer": "Short Example of what a good answer might look like"
     },
     {
-      "question": "Clear, specific question",
+      "question": "Clear, specific question- in simple english and in around 20 words.",
       "rationale": "Why this question matters and how it improves the blog",
-      "example_answer": "Example of what a good answer might look like"
+      "example_answer": "Short Example of what a good answer might look like"
     }
   ]
 }
 
 QUESTION GUIDELINES:
-1. Dig deeper into user's experience, expertise, knowledge, and business context
+1. Dig deeper into user's experience, stories, expertise, knowledge, and business context
 2. Ask about specific details that would make the blog stand out (case studies, testimonials, real numbers, benchmarks)
 3. Focus on questions that AI cannot answer without human input (first-hand experiences, proprietary data, unique insights)
 4. Avoid questions already answered in business_context or expert_opinion
 5. Questions should be highly specific to the keyword/topic, not generic
 
 QUESTION TYPES TO CONSIDER:
-- Customer case studies or testimonials ("Is there a specific customer story that demonstrates this problem/solution?")
+- Customer case studies or testimonials or stories("Is there a specific customer story that demonstrates this problem/solution?")
 - Real-world metrics/benchmarks ("What is the best achievable latency in production today and how?")
 - Common mistakes/pitfalls ("What's the #1 mistake you see teams make when implementing this?")
-- Proprietary insights ("What data or metrics from your experience challenge common assumptions?")
+- Proprietary insights or an iplementation detail("What data or metrics from your experience challenge common assumptions?")
 - Technical specifics ("What are the exact technical limitations readers should know about?")
 - Business context ("How does this compare to your competitors in practice?")
+- About the experience of the user ("Where have you seen agents fail the most in real world?")
 
 IMPORTANT:
 - Use the exact field names shown above
 - Generate EXACTLY 3 questions
-- Use simple english
+- Use simple English. Avoid fancy words. Use short or medium sentences. 
 - Make questions specific to the topic, not generic
 - Return only valid JSON"""
 
@@ -348,25 +385,26 @@ IMPORTANT: Tailor questions to match this blog's format and purpose.
 - For thought leadership: Focus on unique perspectives and proprietary data
 - For tutorials/guides: Focus on practical implementation details and real-world examples"""
 
-        user_prompt = f"""Primary Keyword: {primary_keyword}
+        # Mark variables for frontend highlighting
+        user_prompt = f"""Primary Keyword: {{{{PRIMARY_KEYWORD:{primary_keyword}}}}}
 {blog_type_section}
 
 Writing Style Preference:
-{writing_style if writing_style else "Not specified"}
+{{{{WRITING_STYLE:{writing_style if writing_style else "Not specified"}}}}}
 
 Search Intent Analysis:
-- Primary Intent: {intent_data.get('primary_intent', 'unknown')}
+- Primary Intent: {{{{PRIMARY_INTENT:{intent_data.get('primary_intent', 'unknown')}}}}}
 - Recommended Direction: {intent_data.get('recommended_direction', '')[:500]}...
 
 Expert Opinion Provided:
-{expert_summary}
+{{{{EXPERT_SUMMARY:{expert_summary}}}}}
 
 Competitor Insights:
 - Top competitors covering: {', '.join([c.get('title', '')[:50] for c in competitor_data.get('competitors', [])[:3]])}
 {competitor_content_section}
 
 Business Context (for reference):
-{business_summary}
+{{{{BUSINESS_CONTEXT:{business_summary}}}}}
 
 Generate 3 highly specific, contextual questions that will extract deeper expertise and make this blog 10x better.
 
@@ -379,7 +417,7 @@ CRITICAL: Questions must be directly relevant to the PRIMARY KEYWORD: "{primary_
 
         response = await self._call_gpt4(system_prompt, user_prompt, json_mode=True)
         try:
-            return json.loads(response)
+            return json.loads(response), self._last_full_prompt
         except json.JSONDecodeError as e:
             logger.error(f"OpenAI JSON parse error: {e}")
             logger.debug(f"Raw response: {response[:500]}")
@@ -391,7 +429,7 @@ CRITICAL: Questions must be directly relevant to the PRIMARY KEYWORD: "{primary_
         primary_keyword: str,
         selected_intent: str,
         past_blogs: List[Dict[str, str]]
-    ) -> Dict[str, Any]:
+    ) -> tuple[Dict[str, Any], str]:
         """Suggest blog clustering opportunities."""
         system_prompt = """You are an SEO strategist evaluating content clustering.
 
@@ -417,20 +455,23 @@ Analyze the content and return EXACTLY this JSON structure:
   "cluster_topic": "Main topic for this content cluster",
   "cluster_recommendations": "Detailed recommendations for clustering strategy and content organization"
 }
+Note that you should not suggest too many blogs for either matching blogs or internal linking . Suggest at max 2 blogs for matching blogs and at max 2 internal links.Hence look for hte most relevant ones.
+IMPORTANT: Use these exact field names. Set should_cluster to false if no clustering is recommended. Use simple English. Avoid fancy words. Return only valid JSON."""
 
-IMPORTANT: Use these exact field names. Set should_cluster to false if no clustering is recommended. Return only valid JSON."""
+        # Mark variables for frontend highlighting
+        past_blogs_json = json.dumps(past_blogs, indent=2)
 
-        user_prompt = f"""New Blog Keyword: {primary_keyword}
-Intent: {selected_intent}
+        user_prompt = f"""New Blog Keyword: {{{{PRIMARY_KEYWORD:{primary_keyword}}}}}
+Intent: {{{{SELECTED_INTENT:{selected_intent}}}}}
 
 Past Blogs:
-{json.dumps(past_blogs, indent=2)}
+{{{{PAST_BLOGS:{past_blogs_json}}}}}
 
 Should this blog be clustered? Suggest related content."""
 
         response = await self._call_gpt4(system_prompt, user_prompt, json_mode=True)
         try:
-            return json.loads(response)
+            return json.loads(response), self._last_full_prompt
         except json.JSONDecodeError as e:
             logger.error(f"OpenAI JSON parse error: {e}")
             logger.debug(f"Raw response: {response[:500]}")
@@ -448,7 +489,7 @@ Should this blog be clustered? Suggest related content."""
         expert_opinion: str = "",
         writing_style: str = "",
         contextual_qa: str = ""
-    ) -> Dict[str, Any]:
+    ) -> tuple[Dict[str, Any], str]:
         """Generate comprehensive blog outline."""
         system_prompt = """You are a content strategist creating blog outlines.
 
@@ -482,7 +523,7 @@ Generate a comprehensive outline and return EXACTLY this JSON structure:
   }
 }
 
-IMPORTANT: Use these exact field names. Include at least 4-6 main sections with 2-4 subsections each. Return only valid JSON.
+IMPORTANT: Use these exact field names. Include at least 4-6 main sections with 2-4 subsections each. Use simple English. Avoid fancy words. Return only valid JSON.
 
 COMPETITOR ANALYSIS USAGE:
 You will receive structured competitor insights containing:
@@ -493,9 +534,9 @@ You will receive structured competitor insights containing:
 
 Your outline MUST include focus on COMPETITOR ANALYSIS as this is what current top ranking blogs have"""
 
-        blog_type_section = f"\n\nBlog Type and Purpose:\n{blog_type}\n\nIMPORTANT: Tailor the outline structure and content recommendations specifically for this blog type. Consider the format, tone, and objectives described above when structuring sections." if blog_type else ""
+        blog_type_section = f"\n\nBlog Type and Purpose (CRITICAL):\n{blog_type}\n\nIMPORTANT: Tailor the outline structure and content recommendations specifically for this blog type. Consider the format, tone, and objectives described above when structuring sections." if blog_type else ""
 
-        recommended_direction_section = f"\n\nRecommended Search Intent Direction (from Step 1):\n{recommended_direction}\n\nCRITICAL: Structure the outline to align with this recommended intent direction. This determines how we should approach the topic to match user search intent (informational, commercial, transactional, etc.). Ensure the outline's structure, sections, and depth match this strategic direction." if recommended_direction else ""
+        recommended_direction_section = f"\n\nRecommended Search Intent Direction :\n{recommended_direction}\n\nCRITICAL: Structure the outline to align with this recommended intent direction. This determines how we should approach the topic to match user search intent (collected from serp analysis). Ensure the outline's structure, sections, and depth match this strategic direction." if recommended_direction else ""
 
         expert_section = ""
         if expert_opinion or writing_style:
@@ -507,13 +548,18 @@ Your outline MUST include focus on COMPETITOR ANALYSIS as this is what current t
 
         qa_section = ""
         if contextual_qa:
-            qa_section = f"\n\n=== CONTEXTUAL Q&A (CRITICAL - USE THROUGHOUT) ===\n{contextual_qa}\n\nIMPORTANT: These are specific insights from domain expertise that will make this blog 10x better. Incorporate these details, case studies, benchmarks, and expert knowledge throughout the outline."
+            qa_section = f"\n\n=== CONTEXTUAL Q&A (CRITICAL ) ===\n{contextual_qa}\n\nIMPORTANT: These are specific insights from domain expertise that will make this blog 10x better. Incorporate these details, case studies, benchmarks, and expert knowledge throughout the outline. Some(or all) questions might not have answers (says NA or a dash or something like that)- ignore those particular unanswered questions/answers altogether"
 
-        company_context = self._build_company_context()
+        company_context = await self._build_company_context()
 
-        user_prompt = f"""Primary Keyword: {primary_keyword}
+        # Mark variables for frontend highlighting
+        secondary_kw_text = ', '.join(secondary_keywords)
+        competitor_json = json.dumps(competitor_analysis, indent=2)
+        collected_data_json = json.dumps(collected_data, indent=2)
 
-Secondary Keywords: {', '.join(secondary_keywords)}
+        user_prompt = f"""Primary Keyword: {{{{PRIMARY_KEYWORD:{primary_keyword}}}}}
+
+Secondary Keywords: {{{{SECONDARY_KEYWORDS:{secondary_kw_text}}}}}
 {blog_type_section}
 {recommended_direction_section}
 {expert_section}
@@ -521,18 +567,17 @@ Secondary Keywords: {', '.join(secondary_keywords)}
 
 === COMPETITOR INSIGHTS (CRITICAL - MUST USE) ===
 
-{json.dumps(competitor_analysis, indent=2)}
+{{{{COMPETITOR_ANALYSIS:{competitor_json}}}}}
 
 CRITICAL INSTRUCTIONS FOR COMPETITOR ANALYSIS: Read and understand all sections of competitor analysis to understand what the oultine of top ranking blogs look like and  what all sections and content should be present in our outline . feel free to add small 2-3 word hints in subheadings where needed to make the outline more comprehensive (hitns to the writer when writing the blogn along the outline)
 
 
 
 Available Data:
-{json.dumps(collected_data, indent=2)}
-{company_context}
+{{{{BUSINESS_CONTEXT:{company_context}}}}}
 
 Create a comprehensive, SEO-optimized outline that:
-1. Includes ALL quintessential_elements from competitor analysis 
+1. Includes ALL quintessential_elements from competitor analysis
 2. Incorporates differentiators to stand out from competition
 3. Aligns with the blog type, expert guidance, contextual Q&A, and writing style
 4. Prioritizes expert insights and Q&A details over generic content"""
@@ -544,7 +589,7 @@ Create a comprehensive, SEO-optimized outline that:
             # max_tokens=20000
         )
         try:
-            return json.loads(response)
+            return json.loads(response), self._last_full_prompt
         except json.JSONDecodeError as e:
             logger.error(f"OpenAI JSON parse error: {e}")
             logger.debug(f"Raw response: {response[:500]}")
@@ -559,7 +604,7 @@ Create a comprehensive, SEO-optimized outline that:
         competitors: list = None,
         expert_opinion: str = "",
         writing_style: str = ""
-    ) -> Dict[str, Any]:
+    ) -> tuple[Dict[str, Any], str]:
         """Mark sections for LLM/GEO optimization based on outline, keyword, description, and competitor analysis."""
         if competitors is None:
             competitors = []
@@ -602,7 +647,7 @@ Analyze the outline and return EXACTLY this JSON structure:
   "general_recommendations": "Overall LLM/GEO optimization strategy for this blog"
 }
 
-IMPORTANT: Use these exact field names. Mark at least 2-3 sections for each optimization type. Return only valid JSON."""
+IMPORTANT: Use these exact field names. Mark at least 2-3 sections for each optimization type. Use simple English. Avoid fancy words. Return only valid JSON."""
 
         # Build context sections for the prompt
         keyword_section = f"\n\nPrimary Keyword: {primary_keyword}" if primary_keyword else ""
@@ -624,15 +669,18 @@ IMPORTANT: Use these exact field names. Mark at least 2-3 sections for each opti
             if writing_style:
                 expert_section += f"\n\nWriting Style Preferences:\n{writing_style}\n\nIMPORTANT: Ensure optimization techniques align with this style."
 
-        company_context = self._build_company_context()
+        company_context = await self._build_company_context()
+
+        # Mark variables for frontend highlighting
+        outline_json = json.dumps(outline, indent=2)
 
         user_prompt = f"""Outline:
-{json.dumps(outline, indent=2)}
+{{{{OUTLINE:{outline_json}}}}}
 {keyword_section}
 {blog_type_section}
 {competitor_section}
 {expert_section}
-{company_context}
+{{{{BUSINESS_CONTEXT:{company_context}}}}}
 
 Based on the outline, primary keyword, blog description, and competitor insights above, add LLM/GEO optimization markers:
 
@@ -652,7 +700,7 @@ SPECIFIC TECHNIQUES: Provide specific optimization techniques per section"""
 
         response = await self._call_gpt4(system_prompt, user_prompt, json_mode=True)
         try:
-            return json.loads(response)
+            return json.loads(response), self._last_full_prompt
         except json.JSONDecodeError as e:
             logger.error(f"OpenAI JSON parse error: {e}")
             logger.debug(f"Raw response: {response[:500]}")
@@ -665,10 +713,10 @@ SPECIFIC TECHNIQUES: Provide specific optimization techniques per section"""
         outline: Dict,
         business_context: str,
         blog_type: str = ""
-    ) -> Dict[str, Any]:
+    ) -> tuple[Dict[str, Any], str]:
         """Suggest landing page opportunities."""
         system_prompt = """You are a conversion strategist evaluating landing page opportunities.
-
+First understand what landing pages are from a product manager perspective.
 Analyze the blog content and return EXACTLY this JSON structure:
 
 {
@@ -678,9 +726,10 @@ Analyze the blog content and return EXACTLY this JSON structure:
       "description": "Why this would work as a landing page and how it complements the blog",
       "target_audience": "Specific audience segment this targets",
       "conversion_points": [
-        "Key conversion point 1",
-        "Key conversion point 2",
-        "Key conversion point 3"
+        "Point 1 to include on the landing page",
+        "Point 2 to include on the landing page",
+        "Point 3 to include on the landing page",
+        
       ],
       "cta_suggestions": [
         "Call-to-action option 1",
@@ -691,24 +740,30 @@ Analyze the blog content and return EXACTLY this JSON structure:
   "recommendation": "Which option is recommended and why"
 }
 
-IMPORTANT: Use these exact field names. Provide exactly 2 landing page options. Althroughout use simple english. Return only valid JSON."""
+IMPORTANT: Use these exact field names. Provide exactly 2 landing page options. Use simple English. Avoid fancy words.  Return only valid JSON."""
 
         blog_type_section = f"\n\nBlog Type and Purpose:\n{blog_type}\n\nIMPORTANT: Consider the blog type and its specific objectives when suggesting landing pages. Ensure landing page recommendations align with the blog's purpose." if blog_type else ""
 
-        user_prompt = f"""Blog Keyword: {primary_keyword}
+        # Extract outline structure - all h2 headings
+        outline_summary = ""
+        if isinstance(outline, dict):
+            sections = outline.get("sections", [])
+            outline_summary = "\n".join([f"- {s.get('h2', '')}" for s in sections])
+
+        user_prompt = f"""Blog Keyword: {{{{PRIMARY_KEYWORD:{primary_keyword}}}}}
 {blog_type_section}
 
 Outline Summary:
-{json.dumps(outline, indent=2)[:2000]}
+{{{{OUTLINE_SUMMARY:{outline_summary}}}}}
 
 Business Context:
-{business_context}
+{{{{BUSINESS_CONTEXT:{business_context}}}}}
 
 Suggest landing page opportunities that complement the blog type and purpose."""
 
         response = await self._call_gpt4(system_prompt, user_prompt, json_mode=True)
         try:
-            return json.loads(response)
+            return json.loads(response), self._last_full_prompt
         except json.JSONDecodeError as e:
             logger.error(f"OpenAI JSON parse error: {e}")
             logger.debug(f"Raw response: {response[:500]}")
@@ -727,7 +782,7 @@ Suggest landing page opportunities that complement the blog type and purpose."""
         expert_opinion: str = "",
         writing_style: str = "",
         contextual_qa: str = ""
-    ) -> Dict[str, Any]:
+    ) -> tuple[Dict[str, Any], str]:
         """Suggest infographic opportunities based on holistic blog context."""
         system_prompt = """You are a visual content strategist creating infographics for blog content.
 
@@ -767,7 +822,7 @@ Analyze the content and return EXACTLY this JSON structure:
   "recommendation": "Which infographic option is most impactful and why"
 }
 
-IMPORTANT: Use these exact field names. Provide exactly 2 infographic options. Return only valid JSON."""
+IMPORTANT: Use these exact field names. Provide exactly 2 infographic options. Use simple English. Avoid fancy words. Return only valid JSON."""
 
         blog_type_section = f"\n\nBlog Type and Purpose:\n{blog_type}\n\nIMPORTANT: Consider the blog type and its specific format when suggesting infographics. Ensure visualizations align with the blog's purpose and audience." if blog_type else ""
 
@@ -783,12 +838,18 @@ IMPORTANT: Use these exact field names. Provide exactly 2 infographic options. R
         if contextual_qa:
             qa_section = f"\n\n=== CONTEXTUAL Q&A (CRITICAL - USE THROUGHOUT) ===\n{contextual_qa}\n\nIMPORTANT: Suggest infographics that visualize Q&A insights, case studies, benchmarks, and data mentioned in the answers."
 
-        company_context = self._build_company_context()
+        company_context = await self._build_company_context()
 
         # Add business context section if available
         business_section = ""
         if business_context:
             business_section = f"\n\nBUSINESS CONTEXT:\n{business_context[:1000]}\n\nIMPORTANT: Consider the company's products, services, and expertise when suggesting infographics."
+
+        # Extract outline structure - all h2 headings
+        outline_summary = ""
+        if isinstance(outline, dict):
+            sections = outline.get("sections", [])
+            outline_summary = "\n".join([f"- {s.get('h2', '')}" for s in sections])
 
         user_prompt = f"""PRIMARY KEYWORD: {primary_keyword}
 
@@ -797,7 +858,7 @@ BLOG PURPOSE & INTENT:
 - Recommended Direction: {recommended_direction[:500]}
 
 BLOG OUTLINE (Full Structure):
-{json.dumps(outline, indent=2)[:3000]}
+{outline_summary}
 {business_section}
 
 AVAILABLE DATA POINTS (Statistics):
@@ -820,7 +881,7 @@ THINK HOLISTICALLY:
 
         response = await self._call_gpt4(system_prompt, user_prompt, json_mode=True)
         try:
-            return json.loads(response)
+            return json.loads(response), self._last_full_prompt
         except json.JSONDecodeError as e:
             logger.error(f"OpenAI JSON parse error: {e}")
             logger.debug(f"Raw response: {response[:500]}")
@@ -836,7 +897,7 @@ THINK HOLISTICALLY:
         expert_opinion: str = "",
         writing_style: str = "",
         contextual_qa: str = ""
-    ) -> Dict[str, Any]:
+    ) -> tuple[Dict[str, Any], str]:
         """Generate 3 title options."""
         system_prompt = """You are a headline copywriter creating compelling blog titles.
 
@@ -861,13 +922,13 @@ Generate 3 title options and return EXACTLY this JSON structure:
 }
 
 TITLE RULES:
-- Target ~55 characters (50-60 range acceptable)
+- Target ~65 characters (60-70 range acceptable)
 - MUST start with exact primary keyword
 - Include one power word: Ultimate, Game-changing, Proven, Expert-approved, Essential, Must-try
 - Include bracketed keyword or benefit
 - Solution-oriented and compelling
 
-IMPORTANT: Use these exact field names. Provide exactly 3 title options. Return only valid JSON."""
+IMPORTANT: Use these exact field names. Provide exactly 3 title options. Use simple English and suitable for blog titles. Return only valid JSON."""
 
         blog_type_section = f"\n\nBlog Type and Purpose:\n{blog_type}\n\nIMPORTANT: Create titles that reflect the blog type and its specific format. Ensure titles match the content type and reader expectations." if blog_type else ""
 
@@ -883,12 +944,18 @@ IMPORTANT: Use these exact field names. Provide exactly 3 title options. Return 
         if contextual_qa:
             qa_section = f"\n\n=== CONTEXTUAL Q&A (CRITICAL - USE THROUGHOUT) ===\n{contextual_qa}\n\nIMPORTANT: Create titles that hint at unique insights, case studies, or specific data points from the Q&A."
 
-        company_context = self._build_company_context()
+        company_context = await self._build_company_context()
+
+        # Extract outline structure - all h2 headings
+        outline_summary = ""
+        if isinstance(outline, dict):
+            sections = outline.get("sections", [])
+            outline_summary = "\n".join([f"- {s.get('h2', '')}" for s in sections])
 
         user_prompt = f"""Primary Keyword: {primary_keyword}
 
 Outline Topic:
-{json.dumps(outline, indent=2)[:1000]}
+{outline_summary}
 
 Tone: {tone}
 {blog_type_section}
@@ -896,17 +963,17 @@ Tone: {tone}
 {qa_section}
 {company_context}
 
-Generate 3 compelling title options that align with the blog type, expert guidance, and contextual Q&A."""
+Generate 3 compelling title options that align with the blog type, outline, expert guidance, and contextual Q&A."""
 
         response = await self._call_gpt4(system_prompt, user_prompt, json_mode=True)
         try:
-            return json.loads(response)
+            return json.loads(response), self._last_full_prompt
         except json.JSONDecodeError as e:
             logger.error(f"OpenAI JSON parse error: {e}")
             logger.debug(f"Raw response: {response[:500]}")
             raise ValueError(f"Invalid JSON from OpenAI: {str(e)}")
 
-    # Step 17: Blog Draft Generation
+    # Step 17: Blog Draft Generation (MAIN STEP HERE)
     async def generate_blog_draft(
         self,
         title: str,
@@ -923,15 +990,15 @@ Generate 3 compelling title options that align with the blog type, expert guidan
         optimization_plan: Dict = None,
         tools_data: List[Dict] = None,
         resource_links: List[Dict] = None
-    ) -> str:
+    ) -> tuple[str, str]:
         """Generate complete blog draft."""
         system_prompt = """You are an expert blog writer creating SEO-optimized content.
 
 Writing Guidelines:
 - Tone: Informal writing, informational goal
-- Structure: Attack topic early (no long intros)
-- Paragraphs: 2 lines max (3 absolute max)
-- Sentences: Short and punchy
+- Structure: Attack topic early (no very long intros- 3 to 4 lines only) and write intro like a formal paragraph in simple english.
+- Paragraphs: 2-3 lines max (4 absolute max)
+- Sentences: Short and punchy but in simple english
 - Length: 2000-3000 words
 - Mobile-first: Write for mobile reading
 - Links: Use anchor text (never naked URLs)
@@ -940,7 +1007,7 @@ Writing Guidelines:
 Must Include:
 - Glossary section (4-5 terms)
 - "What is X" sections where appropriate
-- 1-line summary at start of each section
+- 1-line summary at start of each section ( do not mention summary explicitly)
 - All provided data points with citations
 - Bullet points and lists
 - Prerequisites section if relevant
@@ -960,7 +1027,7 @@ Return the complete draft in markdown format."""
 
         qa_section = ""
         if contextual_qa:
-            qa_section = f"\n\n=== CONTEXTUAL Q&A (CRITICAL - HIGHEST PRIORITY - USE THROUGHOUT) ===\n{contextual_qa}\n\nCRITICAL: These are specific insights, case studies, benchmarks, and expert knowledge that will make this blog 10x better. Weave these details throughout the entire draft naturally. Use specific examples, data points, and insights from the Q&A."
+            qa_section = f"\n\n=== CONTEXTUAL Q&A (CRITICAL - HIGH PRIORITY ) ===\n{contextual_qa}\n\nCRITICAL: These are specific insights, case studies, benchmarks, and expert knowledge that will make this blog 10x better. Weave these details throughout the entire draft naturally. Use specific examples, data points, and insights from the Q&A. Note that the user might have left some or all questions unanswered (by writing NA or a dash or something like that)- ignore those questions and answers altogether."
 
         # Competitor blogs section with strong warnings
         competitor_section = ""
@@ -1095,7 +1162,7 @@ OTHER OPTIMIZATIONS:
 - Prioritize sections marked priority: "high" first
 - Do NOT guess placement - follow this plan exactly"""
 
-        company_context = self._build_company_context()
+        company_context = await self._build_company_context()
 
         user_prompt = f"""Title: {title}
 
@@ -1120,7 +1187,7 @@ Business Context:
 {competitor_section}
 {company_context}
 
-Write the complete blog draft following all guidelines, ensuring it matches the blog type and purpose, incorporates expert guidance and contextual Q&A throughout, and uses competitor insights strategically while positioning our company as the superior choice. Write in short or medium sentences and Use simple english and not fancy vocabulary."""
+Write the complete blog draft following all guidelines, ensuring it matches the blog type and purpose, incorporates expert guidance and contextual Q&A, and uses competitor insights strategically while positioning our company as the superior choice. Use simple English. Avoid fancy words. Write in short or medium sentences. And write complete sentences where possible.  Do not use informal language - but use simple and easily understandable english."""
 
         response = await self._call_gpt4(
             system_prompt,
@@ -1128,7 +1195,7 @@ Write the complete blog draft following all guidelines, ensuring it matches the 
             # temperature=0.8,
             # max_tokens=20000
         )
-        return response
+        return response, self._last_full_prompt
 
     # Step 18: FAQ Accordion
     async def generate_faqs(
@@ -1136,38 +1203,73 @@ Write the complete blog draft following all guidelines, ensuring it matches the 
         primary_keyword: str,
         secondary_keywords: List[str],
         blog_content: str,
+        user_faq_hints: List[Dict] = None,
         blog_type: str = "",
         expert_opinion: str = "",
         writing_style: str = "",
         contextual_qa: str = ""
-    ) -> Dict[str, Any]:
-        """Generate FAQ accordion section."""
-        system_prompt = """You are an SEO expert creating FAQ sections.
+    ) -> tuple[Dict[str, Any], str]:
+        """Generate answers for user FAQ hints + 3 additional AI-generated FAQs."""
+        system_prompt = """You are an SEO expert creating FAQ sections with TWO tasks:
 
-Generate FAQs and return EXACTLY this JSON structure:
+TASK 1: Generate complete answers for user-provided FAQ questions
+- User will provide questions and brief answer hints
+- Expand hints into comprehensive, well-written answers (100-200 words each)
+- Maintain the user's intent from hints
+- Use blog content and context for accuracy
+- Naturally incorporate relevant keywords
+
+TASK 2: Generate 3 ADDITIONAL complementary FAQs
+- Create questions that complement the user's FAQs
+- Avoid duplicating user's topics
+- Cover important gaps in the FAQ coverage
+- Questions should follow "People Also Ask" patterns
+- Answers must be 100-200 words
+- Naturally include secondary keywords
+
+Return EXACTLY this JSON structure:
 
 {
-  "faqs": [
+  "user_faqs_with_answers": [
     {
-      "question": "What is [topic/concept]?",
-      "answer": "Concise 2-3 sentence answer using information from the blog. Naturally incorporates relevant keywords.",
+      "question": "User's question",
+      "answer": "Your generated answer based on hints",
       "keywords_used": ["keyword1", "keyword2"],
       "schema_type": "FAQPage"
     }
   ],
-  "total_count": 8,
+  "additional_faqs": [
+    {
+      "question": "What is [topic/concept]?",
+      "answer": "Concise answer using information from the blog",
+      "keywords_used": ["keyword1", "keyword2"],
+      "schema_type": "FAQPage"
+    }
+  ],
+  "total_count": <user_count + 3>,
   "seo_notes": "How these FAQs support SEO and user intent"
 }
 
-FAQ REQUIREMENTS:
-- Generate 6-10 FAQs (aim for 8)
-- Questions should follow "People Also Ask" patterns
-- Answers must be 2-3 sentences maximum
-- Naturally include secondary keywords
-- Cover different aspects of the topic
-- Use question words: What, How, Why, When, Where, Which
+IMPORTANT:
+- user_faqs_with_answers: One entry for EACH user question (with AI-generated answer)
+- additional_faqs: EXACTLY 3 FAQs (no more, no less)
+- Avoid duplicating topics between user FAQs and additional FAQs
+- Use simple English, avoid fancy words
+- Return only valid JSON"""
 
-IMPORTANT: Use these exact field names. Generate between 6-10 FAQs. Return only valid JSON."""
+        # Build user FAQ hints section
+        user_faqs_section = ""
+        if user_faq_hints is None:
+            user_faq_hints = []
+
+        if user_faq_hints and len(user_faq_hints) > 0:
+            user_hints_list = []
+            for i, faq in enumerate(user_faq_hints, 1):
+                user_hints_list.append(f"{i}. Q: {faq.get('question', '')}\n   Hints: {faq.get('hints', '')}")
+            user_hints_text = "\n".join(user_hints_list)
+            user_faqs_section = f"\n\n=== USER FAQ QUESTIONS + HINTS ({len(user_faq_hints)} total) ===\n\n{user_hints_text}\n\nTASK 1: Generate comprehensive answers (100-200 words) for EACH of these FAQs using the hints.\nTASK 2: Generate 3 DIFFERENT FAQs that cover other important aspects not covered by user FAQs."
+        else:
+            user_faqs_section = "\n\n=== USER FAQ QUESTIONS ===\n\nThe user provided 0 FAQs. Generate 3 FAQs covering the most important topics."
 
         blog_type_section = f"\n\nBlog Type and Purpose:\n{blog_type}\n\nIMPORTANT: Generate FAQs that align with the blog type and its objectives. Questions should address reader needs specific to this content type." if blog_type else ""
 
@@ -1181,9 +1283,9 @@ IMPORTANT: Use these exact field names. Generate between 6-10 FAQs. Return only 
 
         qa_section = ""
         if contextual_qa:
-            qa_section = f"\n\n=== CONTEXTUAL Q&A (CRITICAL - USE THROUGHOUT) ===\n{contextual_qa}\n\nIMPORTANT: Generate FAQs that address specific details, case studies, and insights from the Q&A. Use Q&A content to inform answers."
+            qa_section = f"\n\n=== CONTEXTUAL Q&A with with a human Expert ===\n{contextual_qa}\n\nIMPORTANT: Feel  free to use the above Use Q&A content to inform answers but do not base on FAQ questions exactly on the contextual QnA above."
 
-        company_context = self._build_company_context()
+        company_context = await self._build_company_context()
 
         user_prompt = f"""Primary Keyword: {primary_keyword}
 
@@ -1191,16 +1293,17 @@ Secondary Keywords: {', '.join(secondary_keywords)}
 
 Blog Content Summary:
 {blog_content[:3000]}
+{user_faqs_section}
 {blog_type_section}
 {expert_section}
 {qa_section}
 {company_context}
 
-Generate relevant FAQs that support the blog type, purpose, expert guidance, and contextual Q&A."""
+Generate EXACTLY 3 FAQs that complement the user-provided FAQs and support the blog type, purpose, expert guidance, and contextual Q&A."""
 
         response = await self._call_gpt4(system_prompt, user_prompt, json_mode=True)
         try:
-            return json.loads(response)
+            return json.loads(response), self._last_full_prompt
         except json.JSONDecodeError as e:
             logger.error(f"OpenAI JSON parse error: {e}")
             logger.debug(f"Raw response: {response[:500]}")
@@ -1217,17 +1320,19 @@ Generate relevant FAQs that support the blog type, purpose, expert guidance, and
         expert_opinion: str = "",
         writing_style: str = "",
         contextual_qa: str = ""
-    ) -> str:
+    ) -> tuple[str, str]:
         """Generate meta description."""
-        system_prompt = """You are an SEO copywriter creating meta descriptions.
+        system_prompt = """You are an SEO copywriter creating meta descriptions for a blog post. First recall what good meta description should be like.
 
-Requirements:
+Now Our Requirements:
 - 150-160 characters
+- DO not write in informal way and do not write in first person
 - Include primary keyword early
 - Answer main question/promise
 - Include 2-3 secondary keywords naturally
 - Mention 3-4 key points/tools
 - Compelling and clickable
+- Use simple English. Avoid fancy words.
 
 Return just the meta description text (no JSON)."""
 
@@ -1243,9 +1348,9 @@ Return just the meta description text (no JSON)."""
 
         qa_section = ""
         if contextual_qa:
-            qa_section = f"\n\n=== CONTEXTUAL Q&A (CRITICAL - USE IN META) ===\n{contextual_qa[:500]}...\n\nIMPORTANT: Hint at unique insights, case studies, or specific data from the Q&A to make the meta description compelling."
+            qa_section = f"\n\n=== Q&A with a human Expert===\n{contextual_qa[:500]}...\n\nIMPORTANT: Hint at unique insights, case studies, or specific data from the Q&A to make the meta description compelling."
 
-        company_context = self._build_company_context()
+        company_context = await self._build_company_context()
 
         user_prompt = f"""Title: {title}
 Primary Keyword: {primary_keyword}
@@ -1258,13 +1363,265 @@ Blog Summary:
 {qa_section}
 {company_context}
 
-Generate the meta description that aligns with the blog type, expert guidance, and hints at contextual Q&A insights."""
+Generate the meta description that aligns with the blog type, expert guidance, and Q&A insights."""
 
         response = await self._call_gpt4(system_prompt, user_prompt)
-        return response.strip()
+        return response.strip(), self._last_full_prompt
+
+    # Step 9: Data Collection - AI Suggestions
+    async def generate_data_point_ideas(
+        self,
+        primary_keyword: str,
+        outline: Dict[str, Any],
+        customization_context: str = ""
+    ) -> tuple[Dict[str, Any], str]:
+        """
+        Generate 10 broad data point ideas for the creator to research.
+        These are NOT actual data points, but guidance on what kinds of data to look for.
+
+        Args:
+            primary_keyword: Blog topic keyword
+            outline: Generated blog outline structure
+            customization_context: User-provided constraints (e.g., "Do not suggest performance benchmarks")
+
+        Returns:
+            Tuple of (dict with ideas list, full LLM prompt)
+        """
+        system_prompt = """You are a data research strategist helping a technical content creator identify valuable data points to strengthen their blog post.
+
+Generate EXACTLY 10 broad, actionable ideas for what kinds of data points the creator should look for. Do NOT give the actual data points themselves, but strategic directions for research.
+
+Return EXACTLY this JSON structure:
+
+{
+  "ideas": [
+    {
+      "idea": "Look for latency and performance benchmarks comparing X vs Y",
+      "rationale": "Performance data adds credibility and helps readers make informed technical decisions"
+    },
+    {
+      "idea": "Find market adoption statistics and growth trends for the technology",
+      "rationale": "Market data validates the relevance and future-proofing of the approach"
+    }
+  ]
+}
+
+REQUIREMENTS:
+- All 10 ideas must be specific to the blog topic and MOST IMPORTANTLY relevant to the outline
+- Tailor suggestions to the blog type (e.g., benchmark-data blogs need comparison metrics, problem-solution needs failure rates)
+- Each idea should explain WHY that data would strengthen the blog
+- Focus on data that's likely findable (not obscure metrics)
+- Prioritize quantitative data over qualitative when possible
+- Consider: benchmarks, market stats, adoption rates, case studies, technical measurements, user surveys, research findings"""
+
+        # Extract outline structure
+        outline_summary = ""
+        if isinstance(outline, dict):
+            sections = outline.get("sections", [])
+            outline_summary = "\n".join([f"- {s.get('h2', '')}" for s in sections])
+
+        company_context = await self._build_company_context()
+
+        customization_note = ""
+        if customization_context.strip():
+            customization_note = f"\n\nUSER CONSTRAINTS:\n{customization_context}\n(Respect these constraints and do NOT suggest ideas that violate them)"
+
+        user_prompt = f"""Primary Keyword: {primary_keyword}
+
+Outline Structure:
+{outline_summary}
+
+{customization_note}
+
+Generate 10 strategic data point ideas that would strengthen this blog post."""
+
+        response = await self._call_gpt4(system_prompt, user_prompt)
+
+        # Parse JSON response
+        import json
+        try:
+            result = json.loads(response)
+        except json.JSONDecodeError:
+            logger.error("Failed to parse data point ideas JSON response")
+            result = {"ideas": [], "error": "Failed to parse LLM response"}
+
+        return result, self._last_full_prompt
+
+    async def generate_research_prompts(
+        self,
+        primary_keyword: str,
+        outline: Dict[str, Any],
+        recommended_direction: str = "",
+        customization_context: str = ""
+    ) -> tuple[Dict[str, Any], str]:
+        """
+        Generate 10 copy-paste ready research prompts for an LLM research assistant.
+        These prompts will be used by creators to ask an AI to find specific data points.
+
+        Args:
+            primary_keyword: Blog topic keyword
+            outline: Generated blog outline structure
+            recommended_direction: Optional guidance from data point ideas
+            customization_context: User-provided constraints
+
+        Returns:
+            Tuple of (dict with prompts list, full LLM prompt)
+        """
+        system_prompt = """You are a prompt engineer creating research prompts for an LLM research assistant.
+
+Generate  10 ready-to-use prompts that are  broad and that could help me create data points (stats, numbers, figures, survey/research results, benchmarks data etc) for a blog. i would be giving this prompt to an LLM assistant that does research on web, research papers etc.
+They should be in simple plain english (but technical terms allowed).  Add this line  to the end of each prompt: "Find and provide data/points(stats, survey/research results, benchmarks etc) along with sources, link and publication date (include research papers too)"
+
+Remember that i will be copying-pasting the prompts one by one into an LLM research assistant (like ChatGPT with web search, Perplexity, or Claude).
+
+Each prompt should:
+- Should be short and a maximum of 30 words
+- Be self-contained and immediately usable (no placeholders)
+- Request verifiable data points
+- Ask for sources and citations
+- Target data that strengthens the blog's credibility
+- Be broad enough to yield results, specific enough to be actionable
+- in simple english and when using acronyms, give expanded full forms in bracket
+
+Return EXACTLY this JSON structure:
+
+{
+  "prompts": [
+    {
+      "prompt": "Find the latest performance benchmarks comparing FastAPI vs Flask for API response times under 10,000 concurrent requests. Find and provide data points along with sources, link and publication date (include research papers too)",
+      "data_type": "Performance benchmarks",
+      "expected_output": "Numerical metrics with source citations"
+    },
+    {
+      "prompt": "What is the current market share and adoption rate of Kubernetes in production environments? Focus on 2024-2025 data with sources from reputable surveys (CNCF, Stack Overflow, etc.). Find and provide data points along with sources, link and publication date (include research papers too)",
+      "data_type": "Market statistics",
+      "expected_output": "Percentage data with survey sources"
+    }
+  ]
+}
+
+QUALITY CRITERIA:
+- Prompts must be specific to the blog topic and outline
+- Prompts should not be more than 30 words and in simple English
+- Each prompt should target different data pointers
+- Prompts should explicitly request sources and dates
+- Avoid generic prompts - make them actionable for this specific blog
+"""
+
+        # Extract outline structure
+        outline_summary = ""
+        if isinstance(outline, dict):
+            sections = outline.get("sections", [])
+            outline_summary = "\n".join([f"- {s.get('h2', '')}" for s in sections])
+
+        company_context = await self._build_company_context()
+
+        customization_note = ""
+        if customization_context.strip():
+            customization_note = f"\n\nUSER CONSTRAINTS:\n{customization_context}\n(Do NOT create prompts that violate these constraints)"
+
+        direction_note = ""
+        if recommended_direction.strip():
+            direction_note = f"\n\nRECOMMENDED FOCUS:\n{recommended_direction}"
+
+        user_prompt = f"""Primary Keyword: {primary_keyword}
+
+Outline Structure (CRITICAL and MOST IMPORTANT):
+{outline_summary}
+{customization_note}
+
+Generate 10 copy-paste ready research prompts for an LLM research assistant. """
+
+        response = await self._call_gpt4(system_prompt, user_prompt)
+
+        # Parse JSON response
+        import json
+        try:
+            result = json.loads(response)
+        except json.JSONDecodeError:
+            logger.error("Failed to parse research prompts JSON response")
+            result = {"prompts": [], "error": "Failed to parse LLM response"}
+
+        return result, self._last_full_prompt
+
+    # Step 10: Tools Research - AI Suggestions
+    async def generate_tool_suggestions(
+        self,
+        primary_keyword: str,
+        outline: Dict[str, Any],
+        customization_context: str = ""
+    ) -> tuple[Dict[str, Any], str]:
+        """
+        Generate 4-5 tool suggestions for building voice agents.
+        Each tool includes 3-4 brief points about what to look for when researching.
+
+        Args:
+            primary_keyword: Blog topic keyword (used as title context)
+            outline: Generated blog outline structure
+            customization_context: User-provided constraints (optional)
+
+        Returns:
+            Tuple of (dict with tool_suggestions list, full LLM prompt)
+        """
+        system_prompt = """You are a domain expert helping identify relevant tools (for reviewing and researching) for writing a blog.
+
+Generate EXACTLY 4-5 tool suggestions that are relevant for someone writing a blog on given topic by the user.
+
+For each tool, provide 3-4 BRIEF points (max 10 words each) about what to look for when researching.
+
+Return EXACTLY this JSON structure:
+
+{
+  "tool_suggestions": [
+    {
+      "tool_name": "Twilio Voice API",
+      "what_to_look_for": [
+        "Pricing per minute for voice calls",
+        "Features and termonoloogies within the platform",
+        "Supported languages and regions"
+      ]
+    }
+  ]
+}
+
+REQUIREMENTS:
+- Tools must be relevant to the blog topic
+- Each point should be brief (5-6 words)
+- Focus on practical aspects
+- Tailor to the blog's specific topic and outline"""
+
+        # Extract outline structure
+        outline_summary = ""
+        if isinstance(outline, dict):
+            sections = outline.get("sections", [])
+            outline_summary = "\n".join([f"- {s.get('h2', '')}" for s in sections])
+
+        # customization_note = ""
+        # if customization_context.strip():
+        #     customization_note = f"\n\nUSER CONSTRAINTS:\n{customization_context}\n(Do NOT suggest tools that violate these constraints)"
+
+        user_prompt = f"""Blog Topic: {primary_keyword}
+
+Outline Structure:
+{outline_summary}
+
+
+Generate 4-5 tool suggestions relevant in the context of this blog."""
+
+        response = await self._call_gpt4(system_prompt, user_prompt)
+
+        # Parse JSON response
+        import json
+        try:
+            result = json.loads(response)
+        except json.JSONDecodeError:
+            logger.error("Failed to parse tool suggestions JSON response")
+            result = {"tool_suggestions": [], "error": "Failed to parse LLM response"}
+
+        return result, self._last_full_prompt
 
     # Step 20: AI Signal Removal
-    async def remove_ai_signals(self, blog_content: str) -> Dict[str, Any]:
+    async def remove_ai_signals(self, blog_content: str) -> tuple[Dict[str, Any], str]:
         """Analyze and fix AI-written signals."""
         system_prompt = """You are an editor removing AI-written signals from content.
 
@@ -1300,7 +1657,7 @@ AI SIGNALS TO FIX:
 6. Ensure opinion/bias exists (avoid overly neutral tone)
 7. Check for keyword stuffing (unnatural keyword density)
 
-IMPORTANT: Use these exact field names. Include the FULL cleaned content. Return only valid JSON."""
+IMPORTANT: Use these exact field names. Include the FULL cleaned content. Use simple English but not informal.  Return only valid JSON."""
 
         user_prompt = f"""Content to clean:
 {blog_content}
@@ -1314,7 +1671,7 @@ Fix all AI signals and return cleaned version."""
             # max_tokens=20000
         )
         try:
-            return json.loads(response)
+            return json.loads(response), self._last_full_prompt
         except json.JSONDecodeError as e:
             logger.error(f"OpenAI JSON parse error: {e}")
             logger.debug(f"Raw response: {response[:500]}")

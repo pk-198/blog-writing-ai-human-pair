@@ -3,17 +3,22 @@ Session management routes for blog creation workflow.
 Handles session creation, retrieval, and state management.
 """
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends
 from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel, Field
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from urllib.parse import unquote
 import json
 import os
 from pathlib import Path
 
 from app.core.config import settings
+from app.core.dependencies import get_current_user
 from app.models.session import SessionCreate, SessionResponse, SessionState, StepInfo
+from app.utils.file_ops import read_json_file
+from app.core.logger import setup_logger
+
+logger = setup_logger(__name__)
 
 router = APIRouter()
 
@@ -75,8 +80,8 @@ def initialize_session_state(session_id: str, primary_keyword: str, blog_type: s
         "FAQ Accordion",
         "Meta Description",
         "AI Signal Removal",
-        "Final Review Checklist",
-        "Export & Archive"
+        "Export & Archive",
+        "Final Review Checklist"
     ]
 
     for i, step_name in enumerate(step_names, start=1):
@@ -95,6 +100,7 @@ def initialize_session_state(session_id: str, primary_keyword: str, blog_type: s
         status="active",
         primary_keyword=primary_keyword,
         blog_type=blog_type,
+        schema_version=2,  # New sessions use schema v2 (Steps 21=Export, 22=Checklist)
         steps=steps
     )
 
@@ -212,3 +218,157 @@ async def get_active_session():
     # Return most recent
     most_recent = max(active_sessions, key=lambda s: s["updated_at"])
     return {"session": most_recent}
+
+
+# Simple cache for session list (10-second TTL)
+_session_cache = {}
+_cache_lock = {}
+
+@router.get("/")
+async def list_sessions(
+    status_filter: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 5,
+    current_user: Dict = Depends(get_current_user)
+):
+    """
+    List all blog sessions with pagination (for Creator history view).
+
+    Query Parameters:
+        status_filter: Optional filter by session status (active, completed, paused, expired)
+        page: Page number (default: 1)
+        page_size: Number of sessions per page (default: 5, max: 50)
+
+    Returns:
+        Paginated list of sessions with metadata:
+        {
+            "sessions": [...],
+            "pagination": {
+                "page": 1,
+                "page_size": 5,
+                "total_count": 19,
+                "total_pages": 4,
+                "has_next": true,
+                "has_prev": false
+            },
+            "errors": [
+                {"session_id": "...", "error": "..."}
+            ]
+        }
+    """
+    # Validate pagination params
+    page = max(1, page)
+    page_size = min(max(1, page_size), 50)  # Max 50 per page
+
+    logger.info(f"Listing sessions (filter: {status_filter}, page: {page}, page_size: {page_size})")
+
+    # Get sessions directory
+    backend_dir = Path(__file__).parent.parent.parent.parent.parent
+    sessions_dir = backend_dir / "data" / "sessions"
+
+    if not sessions_dir.exists():
+        return {
+            "sessions": [],
+            "pagination": {
+                "page": page,
+                "page_size": page_size,
+                "total_count": 0,
+                "total_pages": 0,
+                "has_next": False,
+                "has_prev": False
+            },
+            "errors": []
+        }
+
+    sessions = []
+    errors = []
+
+    # Iterate through all session directories
+    for session_dir in sessions_dir.iterdir():
+        if not session_dir.is_dir():
+            continue
+
+        state_file = session_dir / "state.json"
+        if not state_file.exists():
+            continue
+
+        try:
+            state = await read_json_file(state_file)
+
+            # Apply status filter if provided
+            if status_filter and state.get("status") != status_filter:
+                continue
+
+            # Calculate progress
+            steps = state.get("steps", {})
+            schema_version = state.get("schema_version", 1)
+
+            # Old sessions (v1): hide steps 21-22, so total is 20
+            # New sessions (v2): full 22 steps
+            total_steps = 20 if schema_version < 2 else 22
+
+            steps_completed = sum(
+                1 for step in steps.values()
+                if step.get("status") == "completed"
+            )
+            steps_skipped = sum(
+                1 for step in steps.values()
+                if step.get("skipped", False)
+            )
+            progress_percentage = (steps_completed / total_steps) * 100
+
+            sessions.append({
+                "session_id": state.get("session_id", ""),
+                "primary_keyword": state.get("primary_keyword", ""),
+                "blog_type": state.get("blog_type", ""),
+                "status": state.get("status", ""),
+                "created_at": state.get("created_at", ""),
+                "updated_at": state.get("updated_at", ""),
+                "current_step": state.get("current_step", 1),
+                "total_steps": total_steps,
+                "progress_percentage": round(progress_percentage, 1),
+                "steps_completed": steps_completed,
+                "steps_skipped": steps_skipped,
+                "schema_version": schema_version
+            })
+
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"Error reading session {session_dir.name}: {error_msg}")
+            errors.append({
+                "session_id": session_dir.name,
+                "error": error_msg
+            })
+            continue
+
+    # Sort by updated_at (most recent first)
+    sessions.sort(key=lambda s: s.get("updated_at", ""), reverse=True)
+
+    # Calculate pagination
+    total_count = len(sessions)
+    total_pages = (total_count + page_size - 1) // page_size  # Ceiling division
+    start_idx = (page - 1) * page_size
+    end_idx = start_idx + page_size
+
+    # Get paginated slice
+    paginated_sessions = sessions[start_idx:end_idx]
+
+    # Pagination metadata
+    pagination = {
+        "page": page,
+        "page_size": page_size,
+        "total_count": total_count,
+        "total_pages": total_pages,
+        "has_next": page < total_pages,
+        "has_prev": page > 1
+    }
+
+    logger.info(f"Returning {len(paginated_sessions)} of {total_count} sessions (page {page}/{total_pages})")
+    if errors:
+        logger.warning(f"Encountered {len(errors)} errors while reading sessions")
+
+    return {
+        "sessions": paginated_sessions,
+        "pagination": pagination,
+        "errors": errors
+    }

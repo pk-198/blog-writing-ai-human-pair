@@ -112,6 +112,7 @@ cp .env.example .env
 
 # Run development server
 uvicorn app.main:app --reload --log-level debug --host 0.0.0.0 --port 8005
+uvicorn app.main:app --reload --log-level debug  --port 8005
 ```
 
 Backend will be available at: http://localhost:8005

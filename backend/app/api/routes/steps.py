@@ -88,7 +88,7 @@ async def execute_step1(
     **Input:** None (uses primary keyword from session)
 
     **Output:**
-    - primary_intent: Identified intent (informational, commercial, transactional, navigational)
+    - primary_intent: Identified intent (problem-solution|teardown|benchmark-data|template-playbook|migration|integration|tools-listing|use-case|alternative|comparison|other)
     - intent_breakdown: Percentage breakdown of all intents
     - recommended_direction: Which intent to pursue
     - serp_analysis: Analysis of top 10 SERP results
@@ -117,7 +117,7 @@ async def execute_step2(
     """
     Step 2: Competitor Content Fetch
 
-    AI fetches top 5 competitor pages using Tavily API.
+    AI fetches selected competitor pages using Tavily API.
 
     **Owner:** AI
 
@@ -594,22 +594,24 @@ async def execute_step12(
     """
     Step 12: Credibility Elements
 
-    Human adds first-person experiences and personal insights.
+    Human adds first-person experiences and expert quotes.
 
     **Owner:** Human
 
     **Input Required:**
-    - experiences: List of first-person experience strings
-    - insights: Personal insights or opinions
+    - experiences: List of first-person experience strings (min. 3 required)
+    - quotes: List of expert quote strings (optional)
 
     **Output:**
-    - credibility_elements: Personal experiences and insights
-    - element_count: Number of elements added
+    - experiences: First-person experiences
+    - quotes: Expert quotes
+    - experience_count: Number of experiences added
+    - quote_count: Number of quotes added
     """
     logger.info(f"Step 12 execution requested by {current_user.get('username')} for session {request.session_id}")
 
     if not request.input_data:
-        raise HTTPException(status_code=400, detail="input_data with 'experiences' required for Step 12")
+        raise HTTPException(status_code=400, detail="input_data with 'experiences' and 'quotes' required for Step 12")
 
     try:
         result = await workflow_service.execute_step(
@@ -866,17 +868,25 @@ async def execute_step18(
     current_user: Dict = Depends(get_current_user)
 ):
     """
-    Step 18: FAQ Accordion
+    Step 18: FAQ Accordion (Two-Phase Hybrid)
 
-    AI generates 6-10 FAQs based on "People Also Ask" patterns.
+    Phase 1: User provides FAQ suggestions (0 or more FAQs)
+    Phase 2: AI generates exactly 3 additional FAQs to complement user's FAQs
 
-    **Owner:** AI
+    **Owner:** Human + AI
 
-    **Input:** None (uses blog content from Step 17)
+    **Input:**
+    - user_faqs: List of user-provided FAQ objects (optional)
+      - Each FAQ must have 'question' and 'answer' fields
 
     **Output:**
-    - faqs: List of question-answer pairs
-    - faq_count: Number of FAQs generated
+    - user_faqs: User-provided FAQs with source="user"
+    - ai_faqs: AI-generated FAQs with source="ai"
+    - faqs: Combined list of all FAQs (user + AI)
+    - user_count: Number of user FAQs
+    - ai_count: Number of AI FAQs (always 3)
+    - total_count: Total number of FAQs (user_count + 3)
+    - faq_html: HTML accordion markup with source badges
     """
     logger.info(f"Step 18 execution requested by {current_user.get('username')} for session {request.session_id}")
 
@@ -967,31 +977,27 @@ async def execute_step20(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/21/final-review", response_model=StepResponse)
+@router.post("/21/export-archive", response_model=StepResponse)
 async def execute_step21(
     request: StepExecuteRequest,
     current_user: Dict = Depends(get_current_user)
 ):
     """
-    Step 21: Final Review Checklist
+    Step 21: Export & Archive
 
-    Human performs final review against checklist.
+    AI exports final blog, saves to plagiarism database, and marks session as completed.
 
-    **Owner:** Human
+    **Owner:** AI
 
-    **Input Required:**
-    - checklist_items: Dict of checklist items with boolean completion status
-    - notes: Optional review notes
+    **Input:** None
 
     **Output:**
-    - review_status: completed/needs_revision
-    - checklist_results: Completed checklist
-    - review_notes: Final notes from human
+    - export_file: Path to final markdown file
+    - export_path: Full path to export
+    - title: Blog title
+    - word_count: Total words in blog
     """
     logger.info(f"Step 21 execution requested by {current_user.get('username')} for session {request.session_id}")
-
-    if not request.input_data:
-        raise HTTPException(status_code=400, detail="input_data with 'checklist_items' required for Step 21")
 
     try:
         result = await workflow_service.execute_step(
@@ -1009,26 +1015,30 @@ async def execute_step21(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/22/export-archive", response_model=StepResponse)
+@router.post("/22/final-review", response_model=StepResponse)
 async def execute_step22(
     request: StepExecuteRequest,
     current_user: Dict = Depends(get_current_user)
 ):
     """
-    Step 22: Export & Archive
+    Step 22: Final Review Checklist
 
-    AI exports final blog and archives session.
+    Reference checklist for post-export editing and uploading. View-only after Step 21 completion.
 
-    **Owner:** AI
+    **Owner:** Human
 
-    **Input:** None
+    **Input Required:**
+    - checklist_items: Dict of checklist items with boolean completion status
+    - notes: Optional review notes
 
     **Output:**
-    - exported_file: Path to final markdown file
-    - archived: Whether session was archived
-    - blog_index_updated: Whether past_blogs index was updated
+    - checklist_results: Completed checklist
+    - review_notes: Final notes from human
     """
     logger.info(f"Step 22 execution requested by {current_user.get('username')} for session {request.session_id}")
+
+    if not request.input_data:
+        raise HTTPException(status_code=400, detail="input_data with 'checklist_items' required for Step 22")
 
     try:
         result = await workflow_service.execute_step(
@@ -1229,7 +1239,7 @@ async def download_blog_export(
         if not export_files:
             raise HTTPException(
                 status_code=404,
-                detail=f"No exported blog file found for session {session_id}. Please complete Step 22 first."
+                detail=f"No exported blog file found for session {session_id}. Please complete Step 21 first."
             )
 
         # Get the most recent export file (sorted by name which includes timestamp)

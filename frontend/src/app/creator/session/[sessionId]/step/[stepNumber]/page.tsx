@@ -169,7 +169,8 @@ export default function StepPage() {
         {getStepComponent({
           sessionId,
           stepNumber,
-          initialData: stepData
+          initialData: stepData,
+          schemaVersion: sessionState?.schema_version
         })}
       </main>
     </div>

@@ -4,6 +4,7 @@
 'use client';
 
 import { useState } from 'react';
+import PromptDisplay from '../shared/PromptDisplay';
 
 interface PlagiarismMatch {
   field: string;
@@ -241,6 +242,12 @@ export default function WorkflowStepCard({ step }: WorkflowStepCardProps) {
             </div>
           )}
 
+          {/* LLM Prompt Display */}
+          <PromptDisplay
+            prompt={step.data?.llm_prompt}
+            title="LLM Prompt Used in This Step"
+          />
+
           {/* Plagiarism Details */}
           {step.plagiarism && step.plagiarism.has_plagiarism && (
             <div className="mb-6">
@@ -312,7 +319,80 @@ export default function WorkflowStepCard({ step }: WorkflowStepCardProps) {
               </button>
             </div>
 
-            {!showRawData && step.data && Object.keys(step.data).length > 0 && (
+            {/* Special rendering for Step 18 (FAQ Accordion) */}
+            {!showRawData && step.step_number === 18 && step.data && Object.keys(step.data).length > 0 && (() => {
+              // Backward compatibility: compute counts from source field if not present
+              const allFaqs = step.data.faqs || [];
+              const userCount = step.data.user_count ?? allFaqs.filter((f: any) => f.source === 'user').length;
+              const aiCount = step.data.ai_count ?? allFaqs.filter((f: any) => f.source === 'ai').length;
+              const totalCount = step.data.total_count ?? allFaqs.length;
+
+              return (
+                <div className="p-4 bg-white border border-gray-300 rounded-lg space-y-4">
+                  {/* FAQ Count Summary */}
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="p-3 bg-blue-50 border border-blue-200 rounded text-center">
+                      <div className="text-2xl font-bold text-blue-600">
+                        {userCount}
+                      </div>
+                      <div className="text-xs text-gray-600">User FAQs</div>
+                    </div>
+                    <div className="p-3 bg-green-50 border border-green-200 rounded text-center">
+                      <div className="text-2xl font-bold text-green-600">
+                        {aiCount}
+                      </div>
+                      <div className="text-xs text-gray-600">AI FAQs</div>
+                    </div>
+                    <div className="p-3 bg-purple-50 border border-purple-200 rounded text-center">
+                      <div className="text-2xl font-bold text-purple-600">
+                        {totalCount}
+                      </div>
+                      <div className="text-xs text-gray-600">Total</div>
+                    </div>
+                  </div>
+
+                {/* FAQ List Preview */}
+                {step.data.faqs && step.data.faqs.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-sm font-semibold text-gray-700">FAQs:</div>
+                    {step.data.faqs.slice(0, 3).map((faq: any, idx: number) => {
+                      // Backward compatibility: handle FAQs without source field (old format)
+                      const isLegacyFaq = !faq.source;
+                      return (
+                        <div key={idx} className="p-2 bg-gray-50 rounded border border-gray-200">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className={`text-xs px-2 py-0.5 rounded ${
+                              faq.source === 'user'
+                                ? 'bg-blue-100 text-blue-800'
+                                : isLegacyFaq
+                                ? 'bg-gray-100 text-gray-800'
+                                : 'bg-green-100 text-green-800'
+                            }`}>
+                              {faq.source === 'user' ? '👤 User' : isLegacyFaq ? '📝 FAQ' : '🤖 AI'}
+                            </span>
+                          <span className="text-sm font-medium text-gray-900">
+                            {faq.question}
+                          </span>
+                        </div>
+                        <div className="text-xs text-gray-600 pl-2">
+                          {faq.answer?.substring(0, 100)}{faq.answer?.length > 100 ? '...' : ''}
+                        </div>
+                      </div>
+                    );
+                    })}
+                    {step.data.faqs.length > 3 && (
+                      <div className="text-sm text-gray-500 italic">
+                        ... and {step.data.faqs.length - 3} more FAQs
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              );
+            })()}
+
+            {/* Generic rendering for other steps */}
+            {!showRawData && step.step_number !== 18 && step.data && Object.keys(step.data).length > 0 && (
               <div className="p-4 bg-white border border-gray-300 rounded-lg">
                 <div className="space-y-2">
                   {Object.entries(step.data).slice(0, 5).map(([key, value]) => (

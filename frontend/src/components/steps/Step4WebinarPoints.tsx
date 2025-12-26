@@ -14,6 +14,7 @@ import SuccessBanner from '../shared/SuccessBanner';
 import ErrorBanner from '../shared/ErrorBanner';
 import ProgressAnimation from '../shared/ProgressAnimation';
 import StepNavigation from '../shared/StepNavigation';
+import PromptDisplay from '../shared/PromptDisplay';
 import { api } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 
@@ -376,6 +377,12 @@ Example: 'Use a conversational tone with short 2-3 sentence paragraphs. Include 
             stepNumber={4}
             stepName="Expert Opinion & Content Guidance"
             message="Both phases completed! Your expertise and contextual answers will enhance the entire blog."
+          />
+
+          {/* LLM Prompt Display */}
+          <PromptDisplay
+            prompt={stepData?.llm_prompt}
+            title="LLM Prompt Sent to OpenAI"
           />
 
           {/* Summary */}

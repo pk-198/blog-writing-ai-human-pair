@@ -15,6 +15,7 @@ import SuccessBanner from '../shared/SuccessBanner';
 import ErrorBanner from '../shared/ErrorBanner';
 import ProgressAnimation from '../shared/ProgressAnimation';
 import StepNavigation from '../shared/StepNavigation';
+import PromptDisplay from '../shared/PromptDisplay';
 import { api } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
@@ -128,6 +129,12 @@ export default function Step3CompetitorAnalysis({ sessionId, initialData }: Step
             stepNumber={3}
             stepName="Competitor Analysis"
             message="Analyzed competitor content patterns and identified key elements"
+          />
+
+          {/* LLM Prompt Display */}
+          <PromptDisplay
+            prompt={stepData?.llm_prompt}
+            title="LLM Prompt Sent to OpenAI"
           />
 
           <h3 className="text-xl font-semibold text-gray-900 mb-4">

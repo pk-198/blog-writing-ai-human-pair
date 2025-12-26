@@ -15,6 +15,7 @@ import SuccessBanner from '../shared/SuccessBanner';
 import ErrorBanner from '../shared/ErrorBanner';
 import ProgressAnimation from '../shared/ProgressAnimation';
 import StepNavigation from '../shared/StepNavigation';
+import PromptDisplay from '../shared/PromptDisplay';
 import { api } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
@@ -208,6 +209,12 @@ export default function Step7OutlineGeneration({ sessionId, initialData }: Step7
             stepNumber={7}
             stepName="Outline Generation"
             message="Generated comprehensive blog outline with H1/H2/H3 structure"
+          />
+
+          {/* LLM Prompt Display */}
+          <PromptDisplay
+            prompt={stepData?.llm_prompt}
+            title="LLM Prompt Sent to OpenAI"
           />
 
           <div className="flex items-center justify-between mb-4">

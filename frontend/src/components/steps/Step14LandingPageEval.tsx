@@ -13,6 +13,7 @@ import SuccessBanner from '../shared/SuccessBanner';
 import ErrorBanner from '../shared/ErrorBanner';
 import ProgressAnimation from '../shared/ProgressAnimation';
 import StepNavigation from '../shared/StepNavigation';
+import PromptDisplay from '../shared/PromptDisplay';
 import { api } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 
@@ -96,7 +97,7 @@ export default function Step14LandingPageEval({ sessionId, initialData }: Step14
             <div className="text-4xl">🎯</div>
             <div>
               <h3 className="text-xl font-bold text-gray-900">
-                Landing Page Opportunities
+                Landing Page Opportunities (Send these details to Team Lead or Relevant Person for Landing page creation )
               </h3>
               <p className="text-sm text-gray-600">
                 {stepData.count || suggestions.length} landing page suggestions identified
@@ -218,7 +219,7 @@ export default function Step14LandingPageEval({ sessionId, initialData }: Step14
       stepNumber={14}
       stepName="Landing Page Evaluation"
       owner="AI"
-      description="AI analyzes the blog content to suggest landing page opportunities"
+      description="AI analyzes the blog content to suggest landing page opportunities. Send details to Team Lead or Relevant person."
     >
       {/* Instructions */}
       <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
@@ -255,6 +256,13 @@ export default function Step14LandingPageEval({ sessionId, initialData }: Step14
             stepName="Landing Page Evaluation"
             message="Evaluated landing page opportunities based on blog content"
           />
+
+          {/* LLM Prompt Display */}
+          <PromptDisplay
+            prompt={stepData?.llm_prompt}
+            title="LLM Prompt Sent to OpenAI"
+          />
+
           {renderSuggestions()}
         </div>
       )}
