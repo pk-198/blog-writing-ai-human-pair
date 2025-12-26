@@ -17,6 +17,7 @@ export default function StepPage() {
   const [sessionState, setSessionState] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isPausing, setIsPausing] = useState(false);
 
   const sessionId = params.sessionId as string;
   const stepNumber = parseInt(params.stepNumber as string);
@@ -52,6 +53,28 @@ export default function StepPage() {
   const handleLogout = () => {
     clearAuth();
     router.push('/');
+  };
+
+  const handlePauseSession = async () => {
+    if (!confirm('Pause this session? You can resume it later from the dashboard.')) {
+      return;
+    }
+
+    setIsPausing(true);
+    try {
+      const token = getToken();
+      if (!token) {
+        throw new Error('Not authenticated');
+      }
+
+      await api.updateSessionStatus(sessionId, 'paused', token);
+      router.push('/creator/dashboard');
+    } catch (err: any) {
+      alert(`Failed to pause session: ${err.message}`);
+    } finally {
+      // Always reset pausing state, even if navigation is interrupted
+      setIsPausing(false);
+    }
   };
 
   if (!role || loading) {
@@ -155,12 +178,25 @@ export default function StepPage() {
               </p>
             </div>
           </div>
-          <button
-            onClick={handleLogout}
-            className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors"
-          >
-            Logout
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={handlePauseSession}
+              disabled={isPausing}
+              className="px-4 py-2 bg-yellow-500 hover:bg-yellow-600 disabled:bg-gray-400 text-white rounded-lg transition-colors flex items-center gap-2"
+              title="Pause session and return to dashboard"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              {isPausing ? 'Pausing...' : 'Pause & Exit'}
+            </button>
+            <button
+              onClick={handleLogout}
+              className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors"
+            >
+              Logout
+            </button>
+          </div>
         </div>
       </header>
 

@@ -57,6 +57,7 @@ export default function Step9DataCollection({ sessionId, initialData }: Step9Pro
   const [showPromptsSection, setShowPromptsSection] = useState(true); // Expanded by default
   const [suggestionsError, setSuggestionsError] = useState<string | null>(null);
   const [showLoadingModal, setShowLoadingModal] = useState(false);
+  const [promptsCopied, setPromptsCopied] = useState(0); // Track copy button clicks
 
   // Auto-generate suggestions on component mount
   useEffect(() => {
@@ -108,6 +109,7 @@ export default function Step9DataCollection({ sessionId, initialData }: Step9Pro
   const copyToClipboard = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
+      setPromptsCopied(prev => prev + 1); // Track copy click
       // Could add a toast notification here
     } catch (err) {
       console.error('Failed to copy to clipboard:', err);
@@ -165,7 +167,11 @@ export default function Step9DataCollection({ sessionId, initialData }: Step9Pro
         validDataPoints,
         token,
         proceedWithFewer,
-        fewerInputsReason
+        fewerInputsReason,
+        'collect',
+        '',
+        '',
+        promptsCopied
       );
 
       if (result.success) {

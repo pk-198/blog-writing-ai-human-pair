@@ -81,7 +81,23 @@ export default function CreatorHistoryPage() {
     : sessions;
 
   const handleViewSession = (sessionId: string) => {
-    router.push(`/creator/session/${sessionId}`);
+    // Find the session to check its status
+    const session = sessions.find(s => s.session_id === sessionId);
+
+    // Safety check: If session not found in current list, don't navigate
+    if (!session) {
+      console.error(`Session ${sessionId} not found in current session list`);
+      alert('Session not found. Please refresh the page and try again.');
+      return;
+    }
+
+    // If active or paused, navigate to current step for quick resume
+    if (session.status === 'active' || session.status === 'paused') {
+      router.push(`/creator/session/${sessionId}/step/${session.current_step}`);
+    } else {
+      // For completed/expired sessions, show overview page
+      router.push(`/creator/session/${sessionId}`);
+    }
   };
 
   const handlePageChange = (newPage: number) => {

@@ -99,6 +99,84 @@ interface SessionListResponse {
   errors: SessionError[];
 }
 
+interface SkipRateDetail {
+  step_number: number;
+  step_name: string;
+  times_encountered: number;
+  times_skipped: number;
+  skip_rate: number;
+  skip_reasons?: string[];
+}
+
+interface CreatorStatsResponse {
+  time_window: string;
+  productivity: {
+    completed_10d: number;
+    completed_30d: number;
+    total_sessions: number;
+    completion_rate: number;
+  };
+  active_work: {
+    active_sessions: number;
+    paused_sessions: number;
+    expired_sessions: number;
+    avg_progress: number;
+  };
+  efficiency: {
+    avg_completion_time_hours: number;
+    fastest_completion_hours: number;
+    slowest_completion_hours: number;
+    top_skipped_steps: SkipRateDetail[];
+  };
+  trends: {
+    completion_rate_10d: number;
+    completion_rate_30d: number;
+    trend: 'improving' | 'declining' | 'stable';
+  };
+}
+
+interface ReviewerStatsResponse {
+  time_window: string;
+  productivity: {
+    completed_10d: number;
+    completed_30d: number;
+    total_sessions: number;
+  };
+  data_collection: {
+    avg_data_points: number;
+    total_data_points: number;
+    avg_tools: number;
+    total_tools: number;
+    avg_resource_links: number;
+    total_resource_links: number;
+    avg_credibility_elements: number;
+    total_credibility_elements: number;
+    avg_faqs: number;
+    total_faqs: number;
+    avg_prompts_copied: number;
+    total_prompts_copied: number;
+    session_count: number;
+  };
+  time_metrics: {
+    avg_session_duration_hours: number;
+    avg_completion_time_hours: number;
+    fastest_completion_hours: number;
+    slowest_completion_hours: number;
+    completed_count: number;
+  };
+  quality_indicators: {
+    overall_skip_rate: number;
+    total_steps_encountered: number;
+    total_steps_skipped: number;
+    skip_by_step: SkipRateDetail[];
+    most_skipped_step: {
+      step_number: number;
+      step_name: string;
+      times_skipped: number;
+    } | null;
+  };
+}
+
 class ApiClient {
   private baseUrl: string;
 
@@ -179,6 +257,47 @@ class ApiClient {
 
     if (!response.ok) {
       throw new Error('Failed to get active session');
+    }
+
+    return response.json();
+  }
+
+  /**
+   * List all active/paused sessions (multi-session support)
+   */
+  async listActiveSessions(token: string): Promise<{ sessions: SessionListItem[] }> {
+    const response = await this.authenticatedRequest(
+      '/api/sessions/active/list',
+      token
+    );
+
+    if (!response.ok) {
+      const error: ApiError = await response.json();
+      throw new Error(error.detail || 'Failed to list active sessions');
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Update session status (pause/resume functionality)
+   */
+  async updateSessionStatus(
+    sessionId: string,
+    status: 'active' | 'paused' | 'completed',
+    token: string
+  ): Promise<any> {
+    const response = await this.authenticatedRequest(
+      `/api/sessions/${sessionId}/status?status=${status}`,
+      token,
+      {
+        method: 'PATCH'
+      }
+    );
+
+    if (!response.ok) {
+      const error: ApiError = await response.json();
+      throw new Error(error.detail || 'Failed to update session status');
     }
 
     return response.json();
@@ -473,7 +592,8 @@ class ApiClient {
     fewerInputsReason: string = '',
     action: string = 'collect',
     ideasCustomization: string = '',
-    promptsCustomization: string = ''
+    promptsCustomization: string = '',
+    promptsCopied: number = 0
   ): Promise<StepResponse> {
     return this.executeStep(9, {
       session_id: sessionId,
@@ -483,7 +603,8 @@ class ApiClient {
         proceed_with_fewer: proceedWithFewer,
         fewer_inputs_reason: fewerInputsReason,
         ideas_customization: ideasCustomization,
-        prompts_customization: promptsCustomization
+        prompts_customization: promptsCustomization,
+        prompts_copied: promptsCopied
       }
     }, token);
   }
@@ -798,6 +919,46 @@ class ApiClient {
 
     return response.json();
   }
+
+  // ============================================================================
+  // STATISTICS METHODS
+  // ============================================================================
+
+  /**
+   * Get statistics for Creator dashboard
+   */
+  async getCreatorStats(timeWindow?: '10d' | '30d' | 'all', token?: string): Promise<CreatorStatsResponse> {
+    const queryParams = timeWindow ? `?time_window=${timeWindow}` : '';
+    const response = await this.authenticatedRequest(
+      `/api/stats/creator${queryParams}`,
+      token!
+    );
+
+    if (!response.ok) {
+      const error: ApiError = await response.json();
+      throw new Error(error.detail || 'Failed to fetch creator statistics');
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Get statistics for Reviewer dashboard
+   */
+  async getReviewerStats(timeWindow?: '10d' | '30d' | 'all', token?: string): Promise<ReviewerStatsResponse> {
+    const queryParams = timeWindow ? `?time_window=${timeWindow}` : '';
+    const response = await this.authenticatedRequest(
+      `/api/stats/reviewer${queryParams}`,
+      token!
+    );
+
+    if (!response.ok) {
+      const error: ApiError = await response.json();
+      throw new Error(error.detail || 'Failed to fetch reviewer statistics');
+    }
+
+    return response.json();
+  }
 }
 
 // Export singleton instance
@@ -817,5 +978,8 @@ export type {
   SessionListItem,
   SessionListResponse,
   PaginationInfo,
-  SessionError
+  SessionError,
+  SkipRateDetail,
+  CreatorStatsResponse,
+  ReviewerStatsResponse
 };

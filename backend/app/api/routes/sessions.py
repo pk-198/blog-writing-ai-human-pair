@@ -220,6 +220,129 @@ async def get_active_session():
     return {"session": most_recent}
 
 
+@router.get("/active/list")
+async def list_active_sessions(current_user: Dict = Depends(get_current_user)):
+    """
+    Get all currently active or paused sessions (multi-session support).
+
+    Returns:
+        List of active/paused sessions sorted by updated_at (most recent first)
+    """
+    # Get absolute path for sessions directory
+    backend_dir = Path(__file__).parent.parent.parent.parent.parent
+    sessions_dir = backend_dir / "data" / "sessions"
+
+    if not sessions_dir.exists():
+        return {"sessions": []}
+
+    # Find all active or paused sessions
+    active_sessions = []
+    for session_dir in sessions_dir.iterdir():
+        if session_dir.is_dir():
+            state_file = session_dir / "state.json"
+            if state_file.exists():
+                try:
+                    with open(state_file, 'r') as f:
+                        state_data = json.load(f)
+                        session_status = state_data.get("status")
+
+                        # Include both active and paused sessions
+                        if session_status in ["active", "paused"]:
+                            # Calculate progress
+                            steps = state_data.get("steps", {})
+                            schema_version = state_data.get("schema_version", 1)
+                            total_steps = 20 if schema_version < 2 else 22
+
+                            steps_completed = sum(
+                                1 for step in steps.values()
+                                if step.get("status") == "completed"
+                            )
+                            progress_percentage = (steps_completed / total_steps) * 100
+
+                            active_sessions.append({
+                                "session_id": state_data.get("session_id", ""),
+                                "primary_keyword": state_data.get("primary_keyword", ""),
+                                "blog_type": state_data.get("blog_type", ""),
+                                "status": session_status,
+                                "created_at": state_data.get("created_at", ""),
+                                "updated_at": state_data.get("updated_at", ""),
+                                "expires_at": state_data.get("expires_at", ""),
+                                "current_step": state_data.get("current_step", 1),
+                                "total_steps": total_steps,
+                                "progress_percentage": round(progress_percentage, 1),
+                                "steps_completed": steps_completed
+                            })
+                except Exception as e:
+                    logger.error(f"Error reading session {session_dir.name}: {e}")
+                    continue
+
+    # Sort by updated_at descending (most recent first)
+    active_sessions.sort(key=lambda s: s.get("updated_at", ""), reverse=True)
+
+    logger.info(f"Found {len(active_sessions)} active/paused sessions")
+    return {"sessions": active_sessions}
+
+
+@router.patch("/{session_id}/status")
+async def update_session_status(
+    session_id: str,
+    status: str,
+    current_user: Dict = Depends(get_current_user)
+):
+    """
+    Update session status (for pause/resume functionality).
+
+    Args:
+        session_id: Unique session identifier
+        status: New status (active, paused, completed)
+
+    Returns:
+        Updated session state
+
+    Raises:
+        HTTPException: If session not found or invalid status
+    """
+    # Validate status
+    valid_statuses = ["active", "paused", "completed"]
+    if status not in valid_statuses:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid status. Must be one of: {', '.join(valid_statuses)}"
+        )
+
+    # URL decode session_id
+    session_id = unquote(session_id)
+
+    # Get session path
+    backend_dir = Path(__file__).parent.parent.parent.parent.parent
+    sessions_dir = backend_dir / "data" / "sessions"
+    session_path = sessions_dir / session_id
+    state_file = session_path / "state.json"
+
+    if not state_file.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Session {session_id} not found"
+        )
+
+    # Load current state
+    with open(state_file, 'r') as f:
+        state_data = json.load(f)
+
+    # Update status and timestamp
+    old_status = state_data.get("status")
+    state_data["status"] = status
+    state_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+    # Save updated state
+    with open(state_file, 'w') as f:
+        json.dump(state_data, f, indent=2)
+
+    logger.info(f"Session {session_id} status updated: {old_status} -> {status}")
+
+    return SessionState(**state_data)
+
+
 # Simple cache for session list (10-second TTL)
 _session_cache = {}
 _cache_lock = {}

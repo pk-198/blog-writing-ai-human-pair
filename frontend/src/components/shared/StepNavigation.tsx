@@ -21,6 +21,7 @@ interface StepNavigationProps {
   hasUnsavedChanges?: boolean; // Flag to check for unsaved edits before navigation
   isAIStep?: boolean; // Flag to show Redo button for AI steps
   onRedo?: () => void; // Callback for Redo button
+  onBeforeNext?: () => Promise<boolean>; // Optional validation hook before navigating to next step
 }
 
 export default function StepNavigation({
@@ -35,7 +36,8 @@ export default function StepNavigation({
   executionComplete = false,
   hasUnsavedChanges = false,
   isAIStep = false,
-  onRedo
+  onRedo,
+  onBeforeNext
 }: StepNavigationProps) {
   const router = useRouter();
   // State for controlling unsaved changes warning dialog
@@ -53,11 +55,20 @@ export default function StepNavigation({
   };
 
   // Handler for Next button with unsaved changes check
-  const handleNext = () => {
+  const handleNext = async () => {
     if (hasUnsavedChanges) {
       setShowUnsavedWarning(true);
       return;
     }
+
+    // Allow parent component to validate before navigation (e.g., Step 1 checking blog selection)
+    if (onBeforeNext) {
+      const canProceed = await onBeforeNext();
+      if (!canProceed) {
+        return; // Validation failed or user cancelled, block navigation
+      }
+    }
+
     if (currentStep < 22) {
       router.push(`/creator/session/${sessionId}/step/${currentStep + 1}`);
     }

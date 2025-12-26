@@ -316,21 +316,42 @@ class WorkflowService:
             else:
                 raise ValueError(f"Invalid step number: {step_number}")
 
-            # Save result
-            await self.update_step_data(session_id, step_number, result, "completed")
-
-            # Log completion
+            # Calculate duration
             duration = time.time() - start_time
-            log_step_complete(logger, session_id, step_number, duration)
 
-            # Add audit entry
-            await self.add_audit_entry(
-                session_id,
-                step_number,
-                result.get("summary", f"Completed {step_name}"),
-                result.get("human_action"),
-                int(duration / 60)
-            )
+            # Check if step returned auto-skip response (Steps 2-3 can auto-skip when no competitors)
+            if result.get("skipped"):
+                # Mark as skipped instead of completed
+                await self.update_step_data(session_id, step_number, result, "skipped")
+
+                # Log skip
+                log_step_skip(logger, session_id, step_number, result.get("reason", "Auto-skipped"))
+
+                # Add skip audit entry
+                await self.add_audit_entry(
+                    session_id,
+                    step_number,
+                    result.get("summary", f"Skipped {step_name}"),
+                    result.get("human_action"),
+                    int(duration / 60),
+                    skipped=True,
+                    skip_reason=result.get("reason", "Auto-skipped")
+                )
+            else:
+                # Normal completion
+                await self.update_step_data(session_id, step_number, result, "completed")
+
+                # Log completion
+                log_step_complete(logger, session_id, step_number, duration)
+
+                # Add audit entry
+                await self.add_audit_entry(
+                    session_id,
+                    step_number,
+                    result.get("summary", f"Completed {step_name}"),
+                    result.get("human_action"),
+                    int(duration / 60)
+                )
 
             return {
                 "success": True,

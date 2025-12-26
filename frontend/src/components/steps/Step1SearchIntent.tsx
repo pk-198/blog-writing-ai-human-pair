@@ -76,7 +76,16 @@ export default function Step1SearchIntent({ sessionId, initialData }: Step1Props
   };
 
   const handleSkip = async () => {
-    const reason = prompt('Why are you skipping this step?');
+    // Use helper to get accurate count (handles duplicates)
+    const totalSelectedBlogs = getTotalSelected();
+
+    // Show context-aware prompt
+    let promptMessage = 'Why are you skipping this step?';
+    if (totalSelectedBlogs === 0) {
+      promptMessage = 'No competitor blogs selected. This will skip Steps 1-3 (competitor analysis). Please provide reason (e.g., "New topic with no competitors", "Case study", "Internal tool tutorial"):';
+    }
+
+    const reason = prompt(promptMessage);
     if (!reason) return;
 
     try {
@@ -95,6 +104,39 @@ export default function Step1SearchIntent({ sessionId, initialData }: Step1Props
   const handleSaveAndPause = async () => {
     // Navigate back to dashboard
     window.location.href = '/creator/dashboard';
+  };
+
+  // Validation handler for "Next Step" button - check blog selection
+  const handleBeforeNext = async (): Promise<boolean> => {
+    const totalSelectedBlogs = getTotalSelected();
+
+    // If 0 blogs selected, show skip prompt (same as Skip button)
+    if (totalSelectedBlogs === 0) {
+      const promptMessage = 'No competitor blogs selected. This will skip Steps 1-3 (competitor analysis). Please provide reason (e.g., "New topic with no competitors", "Case study", "Internal tool tutorial"):';
+      const reason = prompt(promptMessage);
+
+      if (!reason) {
+        return false; // User cancelled, block navigation
+      }
+
+      // Call skip API (same as handleSkip)
+      try {
+        const token = getToken();
+        if (!token) {
+          throw new Error('Not authenticated');
+        }
+
+        await api.skipStep(1, { session_id: sessionId, reason }, token);
+        setExecutionComplete(true);
+        return true; // Allow navigation to Step 2
+      } catch (err: any) {
+        setError(err.message || 'Failed to skip step');
+        return false; // API error, block navigation
+      }
+    }
+
+    // Blogs are selected, allow normal navigation
+    return true;
   };
 
   // Blog selection handlers
@@ -436,12 +478,13 @@ https://research-site.com/paper`}
         currentStep={1}
         isExecuting={isExecuting}
         canExecute={!executionComplete}
-        canSkip={false} // Step 1 cannot be skipped
+        canSkip={true} // Allow skip for new topics/case studies without competitors
         onExecute={handleExecute}
         onSkip={handleSkip}
         onSaveAndPause={handleSaveAndPause}
         executionComplete={executionComplete}
         hasUnsavedChanges={hasUnsavedChanges || hasBlogSelectionChanges}
+        onBeforeNext={handleBeforeNext} // Validate blog selection before navigating to Step 2
       />
     </StepContainer>
   );

@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     REVIEWER_PASSWORD: str
 
     # Application settings
-    SESSION_EXPIRY_HOURS: int = 48
+    SESSION_EXPIRY_HOURS: int = 120  # 5 days (increased from 48h for multi-session workflows)
     MAX_COMPETITOR_FETCH: int = 5
     TARGET_WORD_COUNT: int = 2500
     BUSINESS_NAME: str = "Dograh"  # Legacy - use COMPANY_NAME instead

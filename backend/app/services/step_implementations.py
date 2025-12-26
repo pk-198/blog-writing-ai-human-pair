@@ -126,15 +126,21 @@ async def execute_step2_competitor_fetch(
 
         all_urls = selected_serp_urls + custom_urls
 
-        # Validation: Ensure at least 1 URL is selected
-        if len(all_urls) == 0:
-            error_msg = (
-                f"No blogs selected. "
-                f"Please return to Step 1, select blogs from the SERP results "
-                f"or add custom URLs, and click 'Save Blog Selection' before executing Step 2."
-            )
-            logger.error(f"[Step 2] No blog selection found")
-            raise ValueError(error_msg)
+        # Check if Step 1 was skipped or no blogs selected - auto-skip Step 2
+        step1_status = state["steps"].get("1", {}).get("status", "")
+        if len(all_urls) == 0 or step1_status == "skipped":
+            logger.info(f"[Step 2] Auto-skipping - no competitor blogs selected from Step 1 (session: {session_id})")
+            return {
+                "skipped": True,
+                "reason": "No competitor blogs selected - proceeding without competitor analysis (new topic/case study/internal tool scenario)",
+                "competitors": [],
+                "count": 0,
+                "total_requested": 0,
+                "successful_fetches": 0,
+                "failed_fetches": 0,
+                "failed_urls": [],
+                "summary": "Step 2 skipped - no competitor blogs to fetch"
+            }
 
         logger.info(f"[Step 2] Fetching {len(all_urls)} user-selected blogs ({len(selected_serp_urls)} from SERP, {len(custom_urls)} custom)")
         logger.debug(f"[Step 2] Selected URLs: {all_urls}")
@@ -226,9 +232,19 @@ async def execute_step3_competitor_analysis(
         competitors = step2_data.get("competitors", [])
         logger.debug(f"[Step 3] Retrieved {len(competitors)} competitors from Step 2")
 
-        if not competitors:
-            logger.error(f"[Step 3] No competitor data found")
-            raise ValueError("No competitor data found. Please complete Step 2 first.")
+        # Check if Step 2 was skipped or has no competitors - auto-skip Step 3
+        if step2_data.get("skipped") or not competitors:
+            logger.info(f"[Step 3] Auto-skipping - no competitor data available (session: {session_id})")
+            return {
+                "skipped": True,
+                "reason": "No competitor data available - proceeding without competitor analysis",
+                "analysis": {},
+                "quintessential_elements": [],
+                "differentiators": [],
+                "recommended_sections": [],
+                "skip_sections": [],
+                "summary": "Step 3 skipped - no competitor data to analyze"
+            }
 
         # Analyze with GPT-4
         logger.debug(f"[Step 3] Sending {len(competitors)} competitors to OpenAI for analysis")
@@ -826,6 +842,9 @@ async def execute_step9_data_collection(
         proceed_with_fewer = input_data.get("proceed_with_fewer", False)
         fewer_inputs_reason = input_data.get("fewer_inputs_reason", "")
 
+        # Extract prompts copied count
+        prompts_copied = input_data.get("prompts_copied", 0)
+
         # Validation with fewer inputs option
         if len(validated_points) < 4:
             if proceed_with_fewer and fewer_inputs_reason:
@@ -849,7 +868,8 @@ async def execute_step9_data_collection(
             "summary": f"Collected {len(validated_points)} data points with citations",
             "human_action": "Provided researched data points with source links",
             "proceeded_with_fewer": proceed_with_fewer,
-            "fewer_inputs_reason": fewer_inputs_reason if proceed_with_fewer else None
+            "fewer_inputs_reason": fewer_inputs_reason if proceed_with_fewer else None,
+            "prompts_copied": prompts_copied
         }
 
         if warning_msg:
