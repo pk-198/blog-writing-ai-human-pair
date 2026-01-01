@@ -42,7 +42,7 @@ class Settings(BaseSettings):
 
     # Company Information (for LLM context)
     COMPANY_NAME: str = "Dograh"
-    COMPANY_DESCRIPTION: str = "Open source VOice AI PLatform - for building AI calling agents with a drag and drop visual conversation builder"
+    COMPANY_DESCRIPTION: str = "Open source Voice AI PLatform - for building AI calling agents with a drag and drop visual conversation builder"
     COMPANY_COMPETITORS: Union[List[str], str] = "Vapi, bland ai, livekit, pipecat, synthflow, retell ai"
 
     # CORS settings - can be comma-separated string or list

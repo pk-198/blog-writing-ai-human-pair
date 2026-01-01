@@ -13,8 +13,14 @@ export default function CreatorDashboard() {
   const router = useRouter();
   const [role, setRole] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
+  const [showWebinarModal, setShowWebinarModal] = useState(false);
   const [primaryKeyword, setPrimaryKeyword] = useState('');
   const [blogType, setBlogType] = useState('');
+  const [webinarTopic, setWebinarTopic] = useState('');
+  const [guestName, setGuestName] = useState('');
+  const [guestCredentials, setGuestCredentials] = useState('');
+  const [targetAudience, setTargetAudience] = useState('');
+  const [contentFormat, setContentFormat] = useState<'ghostwritten' | 'conversational'>('ghostwritten');
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState('');
   const [activeSessions, setActiveSessions] = useState<any[]>([]);
@@ -48,10 +54,23 @@ export default function CreatorDashboard() {
         return;
       }
 
-      const response = await api.listActiveSessions(token);
-      if (response.sessions) {
-        setActiveSessions(response.sessions);
-      }
+      // Fetch both standard blog sessions and webinar sessions in parallel
+      const [blogResponse, webinarResponse] = await Promise.all([
+        api.listActiveSessions(token).catch(() => ({ sessions: [] })),
+        api.listActiveWebinarSessions(token).catch(() => ({ sessions: [] }))
+      ]);
+
+      // Merge both lists and sort by updated_at
+      const allSessions = [
+        ...(blogResponse.sessions || []).map(s => ({ ...s, session_type: 'blog' })),
+        ...(webinarResponse.sessions || [])
+      ].sort((a, b) => {
+        const dateA = new Date(a.updated_at || 0).getTime();
+        const dateB = new Date(b.updated_at || 0).getTime();
+        return dateB - dateA; // Most recent first
+      });
+
+      setActiveSessions(allSessions);
     } catch (err) {
       console.error('Failed to load active sessions:', err);
     } finally {
@@ -87,6 +106,56 @@ export default function CreatorDashboard() {
     setPrimaryKeyword('');
     setBlogType('');
     setError('');
+  };
+
+  const handleStartWebinarBlog = () => {
+    setShowWebinarModal(true);
+    setWebinarTopic('');
+    setGuestName('');
+    setGuestCredentials('');
+    setTargetAudience('');
+    setContentFormat('ghostwritten');
+    setError('');
+  };
+
+  const handleCreateWebinarSession = async () => {
+    if (!webinarTopic.trim()) {
+      setError('Please enter a webinar topic');
+      return;
+    }
+
+    if (webinarTopic.trim().length < 10) {
+      setError('Webinar topic must be at least 10 characters');
+      return;
+    }
+
+    setIsCreating(true);
+    setError('');
+
+    try {
+      const token = getToken();
+      if (!token) {
+        router.push('/login');
+        return;
+      }
+
+      const session = await api.createWebinarSession(
+        {
+          webinar_topic: webinarTopic,
+          guest_name: guestName || undefined,
+          guest_credentials: guestCredentials || undefined,
+          target_audience: targetAudience || undefined,
+          content_format: contentFormat
+        },
+        token
+      );
+
+      // Redirect to webinar Step 1
+      router.push(`/creator/webinar-session/${session.session_id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create webinar session');
+      setIsCreating(false);
+    }
   };
 
   const handleCreateSession = async () => {
@@ -366,43 +435,65 @@ export default function CreatorDashboard() {
               <div className="text-gray-600 mb-4">Loading sessions...</div>
             ) : activeSessions.length > 0 ? (
               <div className="space-y-3">
-                {activeSessions.slice(0, 3).map((session: any) => (
-                  <div key={session.session_id} className="bg-green-50 border border-green-200 rounded-lg p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className="text-xl">{session.status === 'paused' ? '⏸️' : '📝'}</span>
-                          <h4 className="font-semibold text-green-900 line-clamp-1">{session.primary_keyword}</h4>
+                {activeSessions.slice(0, 3).map((session: any) => {
+                  // Determine session type and styling
+                  const isWebinar = session.session_type === 'webinar';
+                  const bgColor = isWebinar ? 'bg-purple-50' : 'bg-green-50';
+                  const borderColor = isWebinar ? 'border-purple-200' : 'border-green-200';
+                  const textColor = isWebinar ? 'text-purple-900' : 'text-green-900';
+                  const progressBg = isWebinar ? 'border-purple-300' : 'border-green-300';
+                  const progressBar = isWebinar ? 'bg-purple-600' : 'bg-green-600';
+                  const buttonColor = isWebinar ? 'bg-purple-600 hover:bg-purple-700' : 'bg-green-600 hover:bg-green-700';
+
+                  // Display title based on session type
+                  const displayTitle = isWebinar ? session.webinar_topic : session.primary_keyword;
+
+                  // Icon based on session type
+                  const icon = isWebinar ? '🎥' : '📝';
+
+                  // Resume path based on session type
+                  const resumePath = isWebinar
+                    ? `/creator/webinar-session/${session.session_id}`
+                    : `/creator/session/${session.session_id}/step/${session.current_step}`;
+
+                  return (
+                    <div key={session.session_id} className={`${bgColor} border ${borderColor} rounded-lg p-4`}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="text-xl">{session.status === 'paused' ? '⏸️' : icon}</span>
+                            <h4 className={`font-semibold ${textColor} line-clamp-1`}>{displayTitle}</h4>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 text-xs text-gray-700">
+                            <p>
+                              <span className="font-medium">Step:</span> {session.current_step} of {session.total_steps || 22}
+                            </p>
+                            <p>
+                              <span className="font-medium">Progress:</span> {session.progress_percentage?.toFixed(0)}%
+                            </p>
+                            <p>
+                              <span className="font-medium">Status:</span> {session.status === 'paused' ? 'Paused' : 'Active'}
+                            </p>
+                            <p>
+                              <span className="font-medium">Updated:</span> {new Date(session.updated_at).toLocaleDateString()}
+                            </p>
+                          </div>
+                          <div className={`mt-2 bg-white rounded border ${progressBg} overflow-hidden`}>
+                            <div className={`h-1.5 ${progressBar}`} style={{ width: `${session.progress_percentage || 0}%` }}></div>
+                          </div>
                         </div>
-                        <div className="grid grid-cols-2 gap-2 text-xs text-gray-700">
-                          <p>
-                            <span className="font-medium">Step:</span> {session.current_step} of {session.total_steps || 22}
-                          </p>
-                          <p>
-                            <span className="font-medium">Progress:</span> {session.progress_percentage?.toFixed(0)}%
-                          </p>
-                          <p>
-                            <span className="font-medium">Status:</span> {session.status === 'paused' ? 'Paused' : 'Active'}
-                          </p>
-                          <p>
-                            <span className="font-medium">Updated:</span> {new Date(session.updated_at).toLocaleDateString()}
-                          </p>
+                        <div className="flex flex-col gap-2">
+                          <button
+                            onClick={() => router.push(resumePath)}
+                            className={`whitespace-nowrap ${buttonColor} text-white text-sm font-semibold py-2 px-4 rounded-lg transition-colors`}
+                          >
+                            Resume
+                          </button>
                         </div>
-                        <div className="mt-2 bg-white rounded border border-green-300 overflow-hidden">
-                          <div className="h-1.5 bg-green-600" style={{ width: `${session.progress_percentage || 0}%` }}></div>
-                        </div>
-                      </div>
-                      <div className="flex flex-col gap-2">
-                        <button
-                          onClick={() => router.push(`/creator/session/${session.session_id}/step/${session.current_step}`)}
-                          className="whitespace-nowrap bg-green-600 hover:bg-green-700 text-white text-sm font-semibold py-2 px-4 rounded-lg transition-colors"
-                        >
-                          Resume
-                        </button>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
                 {activeSessions.length === 0 && (
                   <p className="text-gray-600 text-center py-4">No active or paused sessions</p>
                 )}
@@ -449,6 +540,15 @@ export default function CreatorDashboard() {
                 className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors"
               >
                 + Start New Blog
+              </button>
+              <button
+                onClick={handleStartWebinarBlog}
+                className="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.55 3.4a1 1 0 010 1.6L15 18v-8zM5 6h8a1 1 0 011 1v10a1 1 0 01-1 1H5a1 1 0 01-1-1V7a1 1 0 011-1z" />
+                </svg>
+                Webinar Blog
               </button>
               <button
                 onClick={() => router.push('/creator/history')}
@@ -535,6 +635,141 @@ export default function CreatorDashboard() {
               </button>
               <button
                 onClick={() => setShowModal(false)}
+                disabled={isCreating}
+                className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold py-3 px-4 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create Webinar Blog Modal */}
+      {showWebinarModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl p-8 max-w-lg w-full max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center gap-2 mb-4">
+              <svg className="w-8 h-8 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.55 3.4a1 1 0 010 1.6L15 18v-8zM5 6h8a1 1 0 011 1v10a1 1 0 01-1 1H5a1 1 0 01-1-1V7a1 1 0 011-1z" />
+              </svg>
+              <h2 className="text-2xl font-bold text-gray-900">Create Blog from Webinar</h2>
+            </div>
+            <p className="text-gray-600 mb-6">
+              Enter webinar details to start the 15-step webinar-to-blog workflow.
+            </p>
+
+            <div className="mb-4">
+              <label htmlFor="webinarTopic" className="block text-sm font-medium text-gray-700 mb-2">
+                Webinar Topic * (min 10 characters)
+              </label>
+              <input
+                type="text"
+                id="webinarTopic"
+                value={webinarTopic}
+                onChange={(e) => setWebinarTopic(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
+                placeholder="e.g., 'Building AI Calling Agents with Voice AI'"
+                disabled={isCreating}
+              />
+            </div>
+
+            <div className="mb-4">
+              <label htmlFor="guestName" className="block text-sm font-medium text-gray-700 mb-2">
+                Guest Name (optional)
+              </label>
+              <input
+                type="text"
+                id="guestName"
+                value={guestName}
+                onChange={(e) => setGuestName(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
+                placeholder="e.g., 'John Doe'"
+                disabled={isCreating}
+              />
+            </div>
+
+            <div className="mb-4">
+              <label htmlFor="guestCredentials" className="block text-sm font-medium text-gray-700 mb-2">
+                Guest Credentials (optional)
+              </label>
+              <input
+                type="text"
+                id="guestCredentials"
+                value={guestCredentials}
+                onChange={(e) => setGuestCredentials(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
+                placeholder="e.g., 'CEO at VoiceAI Inc, AI Expert'"
+                disabled={isCreating}
+              />
+            </div>
+
+            <div className="mb-4">
+              <label htmlFor="targetAudience" className="block text-sm font-medium text-gray-700 mb-2">
+                Target Audience (optional)
+              </label>
+              <input
+                type="text"
+                id="targetAudience"
+                value={targetAudience}
+                onChange={(e) => setTargetAudience(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
+                placeholder="e.g., 'developers', 'CTOs', 'product managers'"
+                disabled={isCreating}
+              />
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Content Format
+              </label>
+              <div className="flex gap-4">
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    name="contentFormat"
+                    value="ghostwritten"
+                    checked={contentFormat === 'ghostwritten'}
+                    onChange={(e) => setContentFormat(e.target.value as 'ghostwritten')}
+                    className="mr-2"
+                    disabled={isCreating}
+                  />
+                  <span className="text-sm">Ghostwritten (Guest POV)</span>
+                </label>
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    name="contentFormat"
+                    value="conversational"
+                    checked={contentFormat === 'conversational'}
+                    onChange={(e) => setContentFormat(e.target.value as 'conversational')}
+                    className="mr-2"
+                    disabled={isCreating}
+                  />
+                  <span className="text-sm">Conversational (Host + Guest)</span>
+                </label>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Ghostwritten: Blog written as if guest is the author. Conversational: Blog includes dialogue between host and guest.
+              </p>
+            </div>
+
+            {error && (
+              <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3">
+                <p className="text-sm text-red-600">{error}</p>
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <button
+                onClick={handleCreateWebinarSession}
+                disabled={isCreating || !webinarTopic.trim() || webinarTopic.trim().length < 10}
+                className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white font-semibold py-3 px-4 rounded-lg transition-colors"
+              >
+                {isCreating ? 'Creating...' : 'Start Webinar Workflow'}
+              </button>
+              <button
+                onClick={() => setShowWebinarModal(false)}
                 disabled={isCreating}
                 className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold py-3 px-4 rounded-lg transition-colors"
               >

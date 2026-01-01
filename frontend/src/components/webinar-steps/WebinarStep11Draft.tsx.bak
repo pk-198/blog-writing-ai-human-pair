@@ -1,0 +1,270 @@
+/**
+ * Webinar Step 11: Blog Draft Generation
+ * AI generates complete 2000+ word blog draft from webinar transcript
+ * Owner: AI
+ */
+
+'use client';
+
+import React, { useState } from 'react';
+import StepContainer from '../shared/StepContainer';
+import AIOutputDisplay from '../shared/AIOutputDisplay';
+import SuccessBanner from '../shared/SuccessBanner';
+import ErrorBanner from '../shared/ErrorBanner';
+import ProgressAnimation from '../shared/ProgressAnimation';
+import StepNavigation from '../shared/StepNavigation';
+import PromptDisplay from '../shared/PromptDisplay';
+import { api } from '@/lib/api';
+import { getToken } from '@/lib/auth';
+
+interface WebinarStep11Props {
+  sessionId: string;
+  initialData?: any;
+}
+
+export default function WebinarStep11Draft({ sessionId, initialData }: WebinarStep11Props) {
+  const [isExecuting, setIsExecuting] = useState(false);
+  const [executionComplete, setExecutionComplete] = useState(
+    initialData && Object.keys(initialData).length > 0
+  );
+  const [stepData, setStepData] = useState(initialData || null);
+  const [error, setError] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'rendered' | 'markdown'>('rendered');
+
+  const handleExecute = async () => {
+    setIsExecuting(true);
+    setError(null);
+
+    try {
+      const token = getToken();
+      if (!token) {
+        throw new Error('Not authenticated');
+      }
+
+      const result = await api.executeWebinarStep11(sessionId, token);
+
+      if (result.success) {
+        setStepData(result.data);
+        setExecutionComplete(true);
+      } else {
+        setError(result.error || 'Step execution failed');
+      }
+    } catch (err: any) {
+      setError(err.message || 'An error occurred');
+    } finally {
+      setIsExecuting(false);
+    }
+  };
+
+  const handleSkip = async () => {
+    const reason = prompt('Why are you skipping this step?');
+    if (!reason) return;
+
+    try {
+      const token = getToken();
+      if (!token) {
+        throw new Error('Not authenticated');
+      }
+
+      await api.skipStep(11, { session_id: sessionId, reason }, token);
+      setExecutionComplete(true);
+    } catch (err: any) {
+      setError(err.message || 'Failed to skip step');
+    }
+  };
+
+  const handleSaveAndPause = async () => {
+    window.location.href = '/creator/dashboard';
+  };
+
+  const handleCopyToClipboard = () => {
+    if (stepData?.blog_draft) {
+      navigator.clipboard.writeText(stepData.blog_draft);
+      alert('Blog draft copied to clipboard!');
+    }
+  };
+
+  const handleDownload = () => {
+    if (stepData?.blog_draft) {
+      const blob = new Blob([stepData.blog_draft], { type: 'text/markdown' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `webinar-blog-draft-${sessionId}.md`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+  };
+
+  const handleRedo = async () => {
+    setExecutionComplete(false);
+    setStepData(null);
+    setError(null);
+    await handleExecute();
+  };
+
+  return (
+    <StepContainer
+      stepNumber={11}
+      stepName="Blog Draft Generation"
+      owner="AI"
+      description="AI generates complete 2000+ word blog draft from webinar transcript"
+    >
+      {/* Instructions */}
+      {!executionComplete && !isExecuting && (
+        <div className="mb-6 p-4 bg-purple-50 border border-purple-200 rounded-lg">
+          <h3 className="font-semibold text-purple-900 mb-2">What happens in this step:</h3>
+          <ul className="list-disc list-inside text-purple-800 space-y-1 text-sm">
+            <li>AI generates complete blog draft (2000+ words)</li>
+            <li>Follows the outline structure from Step 6</li>
+            <li>Incorporates content guidelines from Step 5</li>
+            <li>Applies LLM optimization techniques (glossary, "What is X" sections)</li>
+            <li>Adapts to selected content format (ghostwritten or conversational)</li>
+            <li>Uses SEO-optimized structure with proper headings and formatting</li>
+          </ul>
+        </div>
+      )}
+
+      {/* Loading State */}
+      {isExecuting && (
+        <ProgressAnimation
+          stepNumber={11}
+          stepName="Blog Draft Generation"
+          estimatedSeconds={120}
+        />
+      )}
+
+      {/* Error State */}
+      {error && (
+        <ErrorBanner
+          error={error}
+          onRetry={handleExecute}
+          stepNumber={11}
+          stepName="Blog Draft Generation"
+        />
+      )}
+
+      {/* Results Display */}
+      {executionComplete && stepData && !isExecuting && (
+        <div className="space-y-4">
+          <SuccessBanner
+            stepNumber={11}
+            stepName="Blog Draft Generation"
+            message={`Generated ${stepData.word_count || '2000+'} word blog draft`}
+          />
+
+          {/* Action Buttons */}
+          <div className="flex justify-between items-center bg-purple-50 border border-purple-200 rounded-lg p-4">
+            <div className="flex gap-2">
+              <button
+                onClick={handleCopyToClipboard}
+                className="bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium py-2 px-4 rounded-lg transition-colors"
+              >
+                📋 Copy to Clipboard
+              </button>
+              <button
+                onClick={handleDownload}
+                className="bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium py-2 px-4 rounded-lg transition-colors"
+              >
+                ⬇️ Download Markdown
+              </button>
+              <button
+                onClick={handleRedo}
+                className="bg-gray-200 hover:bg-gray-300 text-gray-700 text-sm font-medium py-2 px-4 rounded-lg transition-colors"
+              >
+                🔄 Regenerate
+              </button>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setViewMode('rendered')}
+                className={`text-sm font-medium py-2 px-4 rounded-lg transition-colors ${
+                  viewMode === 'rendered'
+                    ? 'bg-purple-600 text-white'
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                Rendered
+              </button>
+              <button
+                onClick={() => setViewMode('markdown')}
+                className={`text-sm font-medium py-2 px-4 rounded-lg transition-colors ${
+                  viewMode === 'markdown'
+                    ? 'bg-purple-600 text-white'
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                Markdown
+              </button>
+            </div>
+          </div>
+
+          {/* Blog Draft Display */}
+          <div className="bg-white border border-purple-200 rounded-lg p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-purple-900">Blog Draft</h3>
+              {stepData.word_count && (
+                <span className="text-sm text-purple-700">
+                  {stepData.word_count} words
+                </span>
+              )}
+            </div>
+
+            <AIOutputDisplay
+              title="Blog Draft"
+              data={stepData.blog_draft}
+              format={viewMode === 'markdown' ? 'text' : 'markdown'}
+            />
+          </div>
+
+          {/* Metadata */}
+          {(stepData.sections_completed || stepData.llm_markers_inserted) && (
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+              <h4 className="text-sm font-semibold text-gray-900 mb-2">Draft Metrics</h4>
+              <div className="grid grid-cols-3 gap-4 text-sm">
+                {stepData.word_count && (
+                  <div>
+                    <span className="text-gray-600">Word Count:</span>
+                    <span className="ml-2 font-medium text-gray-900">{stepData.word_count}</span>
+                  </div>
+                )}
+                {stepData.sections_completed && (
+                  <div>
+                    <span className="text-gray-600">Sections:</span>
+                    <span className="ml-2 font-medium text-gray-900">{stepData.sections_completed}</span>
+                  </div>
+                )}
+                {stepData.llm_markers_inserted && (
+                  <div>
+                    <span className="text-gray-600">LLM Markers:</span>
+                    <span className="ml-2 font-medium text-gray-900">{stepData.llm_markers_inserted}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* LLM Prompt Display */}
+          {stepData.llm_prompt && (
+            <PromptDisplay prompt={stepData.llm_prompt} />
+          )}
+        </div>
+      )}
+
+      <StepNavigation
+        currentStep={11}
+        isExecuting={isExecuting}
+        canExecute={!executionComplete && !isExecuting}
+        canSkip={!isExecuting}
+        onExecute={handleExecute}
+        onSkip={handleSkip}
+        onSaveAndPause={handleSaveAndPause}
+        executionComplete={executionComplete}
+        sessionId={sessionId}
+        hideNavigation={true}
+      />
+    </StepContainer>
+  );
+}

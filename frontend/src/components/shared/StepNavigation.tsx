@@ -22,6 +22,9 @@ interface StepNavigationProps {
   isAIStep?: boolean; // Flag to show Redo button for AI steps
   onRedo?: () => void; // Callback for Redo button
   onBeforeNext?: () => Promise<boolean>; // Optional validation hook before navigating to next step
+  onPrevious?: () => void; // Optional custom previous navigation (for webinar workflow)
+  onNext?: () => void; // Optional custom next navigation (for webinar workflow)
+  hideNavigation?: boolean; // Hide Previous/Next buttons (webinar uses page-level navigation)
 }
 
 export default function StepNavigation({
@@ -37,7 +40,10 @@ export default function StepNavigation({
   hasUnsavedChanges = false,
   isAIStep = false,
   onRedo,
-  onBeforeNext
+  onBeforeNext,
+  onPrevious,
+  onNext,
+  hideNavigation = false
 }: StepNavigationProps) {
   const router = useRouter();
   // State for controlling unsaved changes warning dialog
@@ -49,7 +55,11 @@ export default function StepNavigation({
       setShowUnsavedWarning(true);
       return;
     }
-    if (currentStep > 1) {
+
+    // Use custom navigation if provided (webinar workflow), otherwise use default routing (blog workflow)
+    if (onPrevious) {
+      onPrevious();
+    } else if (currentStep > 1) {
       router.push(`/creator/session/${sessionId}/step/${currentStep - 1}`);
     }
   };
@@ -69,7 +79,10 @@ export default function StepNavigation({
       }
     }
 
-    if (currentStep < 22) {
+    // Use custom navigation if provided (webinar workflow), otherwise use default routing (blog workflow)
+    if (onNext) {
+      onNext();
+    } else if (currentStep < 22) {
       router.push(`/creator/session/${sessionId}/step/${currentStep + 1}`);
     }
   };
@@ -98,14 +111,16 @@ export default function StepNavigation({
         {/* Primary Actions */}
         <div className="flex items-center justify-between gap-4 mb-3">
           <div className="flex gap-2">
-            {/* Previous Button */}
-            <button
-              onClick={handlePrevious}
-              disabled={currentStep === 1}
-              className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              ← Previous
-            </button>
+            {/* Previous Button (hidden for webinar workflow) */}
+            {!hideNavigation && (
+              <button
+                onClick={handlePrevious}
+                disabled={currentStep === 1}
+                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                ← Previous
+              </button>
+            )}
           </div>
 
           <div className="flex gap-2">
@@ -165,8 +180,8 @@ export default function StepNavigation({
               </button>
             )}
 
-            {/* Next Button */}
-            {executionComplete && currentStep < 22 && (
+            {/* Next Button (hidden for webinar workflow) */}
+            {!hideNavigation && executionComplete && currentStep < 22 && (
               <button
                 onClick={handleNext}
                 className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"

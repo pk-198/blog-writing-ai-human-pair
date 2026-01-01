@@ -1,0 +1,210 @@
+/**
+ * Webinar Step 14: Export & Archive
+ * AI exports final blog as markdown with metadata
+ * Owner: AI - Adapted from Step21ExportArchive
+ */
+
+'use client';
+
+import React, { useState } from 'react';
+import StepContainer from '../shared/StepContainer';
+import SuccessBanner from '../shared/SuccessBanner';
+import ErrorBanner from '../shared/ErrorBanner';
+import ProgressAnimation from '../shared/ProgressAnimation';
+import StepNavigation from '../shared/StepNavigation';
+import { api } from '@/lib/api';
+import { getToken } from '@/lib/auth';
+
+interface WebinarStep14Props {
+  sessionId: string;
+  initialData?: any;
+  onStepComplete?: () => Promise<void>;
+}
+
+export default function WebinarStep14Export({ sessionId, initialData, onStepComplete }: WebinarStep14Props) {
+  const [isExecuting, setIsExecuting] = useState(false);
+  const [executionComplete, setExecutionComplete] = useState(
+    initialData && Object.keys(initialData).length > 0
+  );
+  const [stepData, setStepData] = useState(initialData || null);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleExecute = async () => {
+    setIsExecuting(true);
+    setError(null);
+
+    try {
+      const token = getToken();
+      if (!token) throw new Error('Not authenticated');
+
+      const result = await api.executeWebinarStep14(sessionId, token);
+
+      if (result.success) {
+        setStepData(result.data);
+        setExecutionComplete(true);
+        if (onStepComplete) {
+          await onStepComplete();
+        }
+      } else {
+        setError(result.error || 'Step execution failed');
+      }
+    } catch (err: any) {
+      setError(err.message || 'An error occurred');
+    } finally {
+      setIsExecuting(false);
+    }
+  };
+
+  const handleSkip = async () => {
+    const reason = prompt('Why are you skipping this step?');
+    if (!reason) return;
+
+    try {
+      const token = getToken();
+      if (!token) throw new Error('Not authenticated');
+
+      await api.skipWebinarStep(14, { session_id: sessionId, reason }, token);
+      setExecutionComplete(true);
+    } catch (err: any) {
+      setError(err.message || 'Failed to skip step');
+    }
+  };
+
+  const handleSaveAndPause = async () => {
+    window.location.href = '/creator/dashboard';
+  };
+
+  /**
+   * Download Handler - Downloads the exported webinar blog file
+   * ADDED: 2025-01-02 to provide file download functionality
+   */
+  const handleDownloadBlog = async () => {
+    try {
+      const token = getToken();
+      if (!token) throw new Error('Not authenticated');
+
+      await api.downloadWebinarBlog(sessionId, token);
+    } catch (err: any) {
+      setError(err.message || 'Failed to download blog');
+    }
+  };
+
+  return (
+    <StepContainer
+      stepNumber={14}
+      stepName="Export & Archive"
+      owner="AI"
+      description="AI exports final blog as markdown with metadata"
+    >
+      {!executionComplete && !isExecuting && (
+        <div className="mb-6 p-4 bg-purple-50 border border-purple-200 rounded-lg">
+          <h3 className="font-semibold text-purple-900 mb-2">What happens in this step:</h3>
+          <ul className="list-disc list-inside text-purple-800 space-y-1 text-sm">
+            <li>AI compiles final blog draft with all elements</li>
+            <li>Exports as markdown file with frontmatter metadata</li>
+            <li>Includes webinar topic, guest info, and keywords</li>
+            <li>Ready for publishing to CMS or blog platform</li>
+          </ul>
+        </div>
+      )}
+
+      {isExecuting && (
+        <ProgressAnimation stepNumber={14} stepName="Export & Archive" estimatedSeconds={12} />
+      )}
+
+      {error && (
+        <ErrorBanner error={error} onRetry={handleExecute} stepNumber={14} stepName="Export & Archive" />
+      )}
+
+      {executionComplete && stepData && !isExecuting && (
+        <div className="space-y-4">
+          <SuccessBanner
+            stepNumber={14}
+            stepName="Export & Archive"
+            message="Blog exported successfully with metadata"
+          />
+
+          <div className="bg-white border border-purple-200 rounded-lg p-6">
+            <h3 className="text-lg font-semibold text-purple-900 mb-4">Export Details</h3>
+
+            {stepData.export_file && (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
+                <div className="flex items-start gap-3">
+                  <svg className="w-6 h-6 text-green-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <div className="flex-1">
+                    <h4 className="font-semibold text-green-900 mb-1">Blog Exported Successfully</h4>
+                    <p className="text-sm text-green-700 font-mono break-all">
+                      {stepData.export_file}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-4">
+              {stepData.word_count && (
+                <div className="bg-purple-50 rounded-lg p-4">
+                  <p className="text-sm text-purple-700">Word Count</p>
+                  <p className="text-2xl font-bold text-purple-900">{stepData.word_count}</p>
+                </div>
+              )}
+              {stepData.export_timestamp && (
+                <div className="bg-purple-50 rounded-lg p-4">
+                  <p className="text-sm text-purple-700">Export Time</p>
+                  <p className="text-sm font-medium text-purple-900">
+                    {new Date(stepData.export_timestamp).toLocaleString()}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {stepData.included_elements && stepData.included_elements.length > 0 && (
+              <div className="mt-4">
+                <h4 className="font-semibold text-gray-900 mb-2">Included Elements</h4>
+                <div className="flex flex-wrap gap-2">
+                  {stepData.included_elements.map((element: string, idx: number) => (
+                    <span key={idx} className="px-3 py-1 bg-purple-100 text-purple-700 text-xs rounded-full">
+                      {element}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Download Button - ADDED 2025-01-02 */}
+          <button
+            onClick={handleDownloadBlog}
+            className="w-full px-6 py-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg hover:from-purple-700 hover:to-indigo-700 transition-all font-semibold text-lg shadow-lg hover:shadow-xl flex items-center justify-center gap-2"
+          >
+            <span className="text-2xl">📥</span>
+            Download Blog File (.md)
+          </button>
+
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <p className="text-sm text-blue-800">
+              <strong>✓ Ready for Publishing</strong><br/>
+              The exported markdown file contains all blog content with proper formatting and metadata.
+              You can now copy it to your CMS or publish directly.
+            </p>
+          </div>
+        </div>
+      )}
+
+      <StepNavigation
+        currentStep={14}
+        isExecuting={isExecuting}
+        canExecute={!executionComplete && !isExecuting}
+        canSkip={!isExecuting}
+        onExecute={handleExecute}
+        onSkip={handleSkip}
+        onSaveAndPause={handleSaveAndPause}
+        executionComplete={executionComplete}
+        sessionId={sessionId}
+        hideNavigation={true}
+      />
+    </StepContainer>
+  );
+}

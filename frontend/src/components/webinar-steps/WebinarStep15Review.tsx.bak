@@ -1,0 +1,253 @@
+/**
+ * Webinar Step 15: Final Review Checklist
+ * Human reviews and approves final blog for publication
+ * Owner: Human - Adapted from Step21FinalReviewChecklist
+ */
+
+'use client';
+
+import React, { useState } from 'react';
+import StepContainer from '../shared/StepContainer';
+import SuccessBanner from '../shared/SuccessBanner';
+import StepNavigation from '../shared/StepNavigation';
+import { api } from '@/lib/api';
+import { getToken } from '@/lib/auth';
+
+interface WebinarStep15Props {
+  sessionId: string;
+  initialData?: any;
+}
+
+interface ChecklistItem {
+  id: string;
+  label: string;
+  checked: boolean;
+}
+
+export default function WebinarStep15Review({ sessionId, initialData }: WebinarStep15Props) {
+  const [checklist, setChecklist] = useState<ChecklistItem[]>(
+    initialData?.checklist_items || [
+      { id: 'accuracy', label: 'Content accuracy verified (facts, quotes, attributions)', checked: false },
+      { id: 'tone', label: 'Tone matches target audience and brand voice', checked: false },
+      { id: 'seo', label: 'SEO elements present (title, meta description, headings)', checked: false },
+      { id: 'format', label: 'Content format matches selection (ghostwritten/conversational)', checked: false },
+      { id: 'links', label: 'Internal links and CTAs included where appropriate', checked: false },
+      { id: 'grammar', label: 'Grammar and spelling checked', checked: false },
+      { id: 'structure', label: 'Blog structure flows logically', checked: false },
+      { id: 'webinar', label: 'Key webinar insights captured accurately', checked: false }
+    ]
+  );
+  const [feedback, setFeedback] = useState(initialData?.feedback || '');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [executionComplete, setExecutionComplete] = useState(
+    initialData && Object.keys(initialData).length > 0
+  );
+  const [error, setError] = useState<string | null>(null);
+
+  const handleChecklistChange = (id: string) => {
+    setChecklist(prev =>
+      prev.map(item =>
+        item.id === id ? { ...item, checked: !item.checked } : item
+      )
+    );
+  };
+
+  const handleSubmit = async () => {
+    const allChecked = checklist.every(item => item.checked);
+
+    if (!allChecked) {
+      const confirmSubmit = confirm(
+        'Not all checklist items are checked. Are you sure you want to submit?'
+      );
+      if (!confirmSubmit) return;
+    }
+
+    setIsSubmitting(true);
+    setError(null);
+
+    try {
+      const token = getToken();
+      if (!token) throw new Error('Not authenticated');
+
+      const result = await api.executeWebinarStep15(sessionId, token, {
+        checklist_items: checklist,
+        feedback: feedback.trim() || undefined,
+        all_items_checked: allChecked
+      });
+
+      if (result.success) {
+        setExecutionComplete(true);
+      } else {
+        setError(result.error || 'Failed to submit review');
+      }
+    } catch (err: any) {
+      setError(err.message || 'An error occurred');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleSkip = async () => {
+    const reason = prompt('Why are you skipping this step?');
+    if (!reason) return;
+
+    try {
+      const token = getToken();
+      if (!token) throw new Error('Not authenticated');
+
+      await api.skipStep(15, { session_id: sessionId, reason }, token);
+      setExecutionComplete(true);
+    } catch (err: any) {
+      setError(err.message || 'Failed to skip step');
+    }
+  };
+
+  const handleSaveAndPause = async () => {
+    window.location.href = '/creator/dashboard';
+  };
+
+  const checkedCount = checklist.filter(item => item.checked).length;
+  const totalCount = checklist.length;
+  const completionPercentage = Math.round((checkedCount / totalCount) * 100);
+
+  return (
+    <StepContainer
+      stepNumber={15}
+      stepName="Final Review Checklist"
+      description="Review and approve final blog for publication"
+      owner="Human"
+    >
+      {error && (
+        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+          <p className="text-red-800 text-sm">{error}</p>
+        </div>
+      )}
+
+      {executionComplete ? (
+        <div className="space-y-4">
+          <SuccessBanner
+            stepNumber={15}
+            stepName="Final Review Checklist"
+            message="Blog review completed successfully!"
+          />
+
+          <div className="bg-purple-50 border border-purple-200 rounded-lg p-6">
+            <h3 className="text-lg font-semibold text-purple-900 mb-4">Review Summary</h3>
+            <dl className="space-y-3">
+              <div>
+                <dt className="text-sm font-medium text-purple-700">Checklist Items Completed:</dt>
+                <dd className="mt-1 text-purple-900">{initialData?.all_items_checked ? 'All items checked ✓' : `${checkedCount} of ${totalCount} items`}</dd>
+              </div>
+              {(initialData?.feedback || feedback) && (
+                <div>
+                  <dt className="text-sm font-medium text-purple-700">Feedback:</dt>
+                  <dd className="mt-1 text-purple-900 whitespace-pre-wrap">
+                    {initialData?.feedback || feedback}
+                  </dd>
+                </div>
+              )}
+            </dl>
+          </div>
+
+          <div className="bg-green-50 border border-green-200 rounded-lg p-6">
+            <h3 className="text-lg font-semibold text-green-900 mb-2">
+              🎉 Webinar Blog Creation Complete!
+            </h3>
+            <p className="text-green-700">
+              Your webinar has been successfully transformed into an SEO-optimized blog post.
+              The exported markdown file is ready for publishing.
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          <div className="bg-purple-50 border border-purple-200 rounded-lg p-6">
+            <h3 className="text-lg font-semibold text-purple-900 mb-4">Final Review Checklist</h3>
+            <p className="text-sm text-purple-700 mb-6">
+              Review the exported blog and check all items below before final approval.
+            </p>
+
+            {/* Progress Bar */}
+            <div className="mb-6">
+              <div className="flex justify-between text-sm text-purple-700 mb-2">
+                <span>Progress</span>
+                <span>{checkedCount} of {totalCount} ({completionPercentage}%)</span>
+              </div>
+              <div className="w-full bg-purple-200 rounded-full h-3">
+                <div
+                  className="bg-purple-600 h-3 rounded-full transition-all duration-300"
+                  style={{ width: `${completionPercentage}%` }}
+                ></div>
+              </div>
+            </div>
+
+            {/* Checklist Items */}
+            <div className="space-y-3">
+              {checklist.map((item) => (
+                <label
+                  key={item.id}
+                  className="flex items-start gap-3 p-3 rounded-lg hover:bg-purple-100 cursor-pointer transition-colors"
+                >
+                  <input
+                    type="checkbox"
+                    checked={item.checked}
+                    onChange={() => handleChecklistChange(item.id)}
+                    className="mt-1 w-5 h-5 text-purple-600 rounded focus:ring-purple-500"
+                  />
+                  <span className={`flex-1 ${item.checked ? 'text-gray-900' : 'text-gray-700'}`}>
+                    {item.label}
+                  </span>
+                </label>
+              ))}
+            </div>
+
+            {/* Feedback */}
+            <div className="mt-6">
+              <label htmlFor="feedback" className="block text-sm font-medium text-gray-700 mb-2">
+                Additional Feedback <span className="text-xs text-gray-500">(optional)</span>
+              </label>
+              <textarea
+                id="feedback"
+                value={feedback}
+                onChange={(e) => setFeedback(e.target.value)}
+                rows={4}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
+                placeholder="Any additional notes or suggestions..."
+                disabled={isSubmitting}
+              />
+            </div>
+
+            {/* Submit Button */}
+            <button
+              onClick={handleSubmit}
+              disabled={isSubmitting}
+              className="w-full mt-6 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+            >
+              {isSubmitting ? 'Submitting...' : 'Complete Review & Finish'}
+            </button>
+          </div>
+
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <p className="text-sm text-blue-800">
+              <strong>💡 Tip:</strong> This is the final step! Once you complete this review,
+              the webinar blog creation workflow will be marked as finished.
+            </p>
+          </div>
+        </div>
+      )}
+
+      <StepNavigation
+        currentStep={15}
+        isExecuting={isSubmitting}
+        canExecute={false}
+        canSkip={!isSubmitting}
+        onExecute={() => {}}
+        onSkip={handleSkip}
+        onSaveAndPause={handleSaveAndPause}
+        executionComplete={executionComplete}
+        sessionId={sessionId}
+        hideNavigation={true}
+      />
+    </StepContainer>
+  );
+}

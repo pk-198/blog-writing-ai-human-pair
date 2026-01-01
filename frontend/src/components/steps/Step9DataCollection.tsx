@@ -562,7 +562,7 @@ export default function Step9DataCollection({ sessionId, initialData }: Step9Pro
               Generating AI Suggestions
             </h3>
             <p className="text-gray-600">
-              Please wait while we generate data point ideas and research prompts based on your blog outline...
+              Please wait while we generate data point ideas and data research prompts based on your blog outline...
             </p>
             <div className="mt-4 text-sm text-gray-500">
               This may take 10-30 seconds

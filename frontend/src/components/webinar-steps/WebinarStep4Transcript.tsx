@@ -1,0 +1,198 @@
+/**
+ * Webinar Step 4: Transcript Input
+ * Human uploads webinar/podcast transcript
+ * Owner: Human
+ */
+
+'use client';
+
+import React, { useState } from 'react';
+import StepContainer from '../shared/StepContainer';
+import StepNavigation from '../shared/StepNavigation';
+import SuccessBanner from '../shared/SuccessBanner';
+import { api } from '@/lib/api';
+import { getToken } from '@/lib/auth';
+
+interface WebinarStep4Props {
+  sessionId: string;
+  initialData?: any;
+  onStepComplete?: () => Promise<void>;
+}
+
+export default function WebinarStep4Transcript({ sessionId, initialData, onStepComplete }: WebinarStep4Props) {
+  const [transcript, setTranscript] = useState(initialData?.transcript || '');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [executionComplete, setExecutionComplete] = useState(
+    initialData && Object.keys(initialData).length > 0
+  );
+  const [error, setError] = useState<string | null>(null);
+
+  const wordCount = transcript.trim().split(/\s+/).filter(Boolean).length;
+
+  const handleSubmit = async () => {
+    setIsSubmitting(true);
+    setError(null);
+
+    try {
+      const token = getToken();
+      if (!token) {
+        throw new Error('Not authenticated');
+      }
+
+      const result = await api.executeWebinarStep4(sessionId, token, {
+        transcript: transcript.trim()
+      });
+
+      if (result.success) {
+        setExecutionComplete(true);
+        if (onStepComplete) {
+          await onStepComplete();
+        }
+      } else {
+        setError(result.error || 'Failed to save transcript');
+      }
+    } catch (err: any) {
+      setError(err.message || 'An error occurred');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleSkip = async () => {
+    const reason = prompt('Why are you skipping this step? (Note: Transcript is required for AI to generate blog content)');
+    if (!reason) return;
+
+    try {
+      const token = getToken();
+      if (!token) {
+        throw new Error('Not authenticated');
+      }
+
+      await api.skipWebinarStep(4, { session_id: sessionId, reason }, token);
+      setExecutionComplete(true);
+    } catch (err: any) {
+      setError(err.message || 'Failed to skip step');
+    }
+  };
+
+  const handleSaveAndPause = async () => {
+    window.location.href = '/creator/dashboard';
+  };
+
+  return (
+    <StepContainer
+      stepNumber={4}
+      stepName="Webinar Transcript Input"
+      description="Upload webinar/podcast transcript"
+      owner="Human"
+    >
+      {error && (
+        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+          <p className="text-red-800 text-sm">{error}</p>
+        </div>
+      )}
+
+      {executionComplete ? (
+        <div className="space-y-4">
+          <SuccessBanner
+            stepNumber={4}
+            stepName="Webinar Transcript Input"
+            message="Transcript uploaded successfully!"
+          />
+
+          <div className="bg-purple-50 border border-purple-200 rounded-lg p-6">
+            <h3 className="text-lg font-semibold text-purple-900 mb-4">Transcript Details</h3>
+            <dl className="space-y-3">
+              <div>
+                <dt className="text-sm font-medium text-purple-700">Word Count:</dt>
+                <dd className="mt-1 text-purple-900">
+                  {initialData?.word_count || wordCount} words
+                </dd>
+              </div>
+              {initialData?.transcript_file && (
+                <div>
+                  <dt className="text-sm font-medium text-purple-700">Saved to:</dt>
+                  <dd className="mt-1 text-xs text-purple-700 font-mono">
+                    {initialData.transcript_file}
+                  </dd>
+                </div>
+              )}
+            </dl>
+
+            {/* Show preview of transcript */}
+            <div className="mt-4">
+              <dt className="text-sm font-medium text-purple-700 mb-2">Preview:</dt>
+              <div className="bg-white border border-purple-200 rounded p-4 max-h-64 overflow-y-auto">
+                <p className="text-sm text-gray-700 whitespace-pre-wrap">
+                  {(initialData?.transcript || transcript).substring(0, 500)}
+                  {(initialData?.transcript || transcript).length > 500 && '...'}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          <div className="bg-purple-50 border border-purple-200 rounded-lg p-6">
+            <h3 className="text-lg font-semibold text-purple-900 mb-4">Upload Webinar Transcript</h3>
+            <p className="text-sm text-purple-700 mb-6">
+              Paste the full transcript of your webinar or podcast. The AI will use this to generate an SEO-optimized blog post.
+              Speaker labels are helpful but not required.
+            </p>
+
+            <div className="space-y-4">
+              <div>
+                <label htmlFor="transcript" className="block text-sm font-medium text-gray-700 mb-2">
+                  Transcript *
+                </label>
+                <textarea
+                  id="transcript"
+                  value={transcript}
+                  onChange={(e) => setTranscript(e.target.value)}
+                  rows={20}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none font-mono text-sm"
+                  placeholder="Paste webinar transcript here...&#10;&#10;Example:&#10;Host: Welcome to our webinar on AI calling agents...&#10;Guest: Thanks for having me. Today I'll share...&#10;&#10;Or just paste the raw transcript without speaker labels."
+                  disabled={isSubmitting}
+                />
+                <div className="flex justify-between items-center mt-2">
+                  <span className="text-sm font-medium text-gray-600">
+                    Word count: {wordCount}
+                  </span>
+                </div>
+              </div>
+
+              <button
+                onClick={handleSubmit}
+                disabled={isSubmitting}
+                className="w-full bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+              >
+                {isSubmitting ? 'Uploading...' : 'Submit Transcript'}
+              </button>
+            </div>
+          </div>
+
+          {/* Help text */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <p className="text-sm text-blue-800">
+              <strong>💡 Tip:</strong> You can paste the transcript as-is from your webinar platform or transcription service.
+              The AI will automatically extract key insights and structure them into a blog post.
+            </p>
+          </div>
+        </div>
+      )}
+
+      <StepNavigation
+        currentStep={4}
+        isExecuting={isSubmitting}
+        canExecute={false}
+        canSkip={!isSubmitting}
+        onExecute={() => {}}
+        onSkip={handleSkip}
+        onSaveAndPause={handleSaveAndPause}
+        executionComplete={executionComplete}
+        sessionId={sessionId}
+        hideNavigation={true}
+      />
+    </StepContainer>
+  );
+}

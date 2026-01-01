@@ -1,0 +1,212 @@
+/**
+ * Webinar Step 6: Outline Generation
+ * AI generates blog outline from transcript and guidelines
+ * Owner: AI
+ */
+
+'use client';
+
+import React, { useState } from 'react';
+import StepContainer from '../shared/StepContainer';
+import AIOutputDisplay from '../shared/AIOutputDisplay';
+import SuccessBanner from '../shared/SuccessBanner';
+import ErrorBanner from '../shared/ErrorBanner';
+import ProgressAnimation from '../shared/ProgressAnimation';
+import StepNavigation from '../shared/StepNavigation';
+import PromptDisplay from '../shared/PromptDisplay';
+import { api } from '@/lib/api';
+import { getToken } from '@/lib/auth';
+
+interface WebinarStep6Props {
+  sessionId: string;
+  initialData?: any;
+}
+
+export default function WebinarStep6Outline({ sessionId, initialData }: WebinarStep6Props) {
+  const [isExecuting, setIsExecuting] = useState(false);
+  const [executionComplete, setExecutionComplete] = useState(
+    initialData && Object.keys(initialData).length > 0
+  );
+  const [stepData, setStepData] = useState(initialData || null);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleExecute = async () => {
+    setIsExecuting(true);
+    setError(null);
+
+    try {
+      const token = getToken();
+      if (!token) {
+        throw new Error('Not authenticated');
+      }
+
+      const result = await api.executeWebinarStep6(sessionId, token);
+
+      if (result.success) {
+        setStepData(result.data);
+        setExecutionComplete(true);
+      } else {
+        setError(result.error || 'Step execution failed');
+      }
+    } catch (err: any) {
+      setError(err.message || 'An error occurred');
+    } finally {
+      setIsExecuting(false);
+    }
+  };
+
+  const handleSkip = async () => {
+    const reason = prompt('Why are you skipping this step?');
+    if (!reason) return;
+
+    try {
+      const token = getToken();
+      if (!token) {
+        throw new Error('Not authenticated');
+      }
+
+      await api.skipStep(6, { session_id: sessionId, reason }, token);
+      setExecutionComplete(true);
+    } catch (err: any) {
+      setError(err.message || 'Failed to skip step');
+    }
+  };
+
+  const handleSaveAndPause = async () => {
+    window.location.href = '/creator/dashboard';
+  };
+
+  const handleRedo = async () => {
+    setExecutionComplete(false);
+    setStepData(null);
+    setError(null);
+    await handleExecute();
+  };
+
+  return (
+    <StepContainer
+      stepNumber={6}
+      stepName="Outline Generation"
+      owner="AI"
+      description="AI generates blog outline from transcript and guidelines"
+    >
+      {/* Instructions */}
+      {!executionComplete && !isExecuting && (
+        <div className="mb-6 p-4 bg-purple-50 border border-purple-200 rounded-lg">
+          <h3 className="font-semibold text-purple-900 mb-2">What happens in this step:</h3>
+          <ul className="list-disc list-inside text-purple-800 space-y-1 text-sm">
+            <li>AI analyzes webinar transcript for key insights and structure</li>
+            <li>Considers competitor patterns and content guidelines</li>
+            <li>Generates a structured outline with introduction, sections, and conclusion</li>
+            <li>Tailors outline to content format (ghostwritten or conversational)</li>
+          </ul>
+        </div>
+      )}
+
+      {/* Loading State */}
+      {isExecuting && (
+        <ProgressAnimation
+          stepNumber={6}
+          stepName="Outline Generation"
+          estimatedSeconds={75}
+        />
+      )}
+
+      {/* Error State */}
+      {error && (
+        <ErrorBanner
+          error={error}
+          onRetry={handleExecute}
+          stepNumber={6}
+          stepName="Outline Generation"
+        />
+      )}
+
+      {/* Results Display */}
+      {executionComplete && stepData && !isExecuting && (
+        <div className="space-y-4">
+          <SuccessBanner
+            stepNumber={6}
+            stepName="Outline Generation"
+            message="Successfully generated blog outline from webinar transcript"
+          />
+
+          {/* Outline Display */}
+          <div className="bg-white border border-purple-200 rounded-lg p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-purple-900">Blog Outline</h3>
+              <button
+                onClick={handleRedo}
+                className="text-sm text-purple-600 hover:text-purple-700 font-medium"
+              >
+                🔄 Regenerate
+              </button>
+            </div>
+
+            {/* Introduction */}
+            {stepData.introduction && (
+              <div className="mb-6 p-4 bg-purple-50 rounded-lg">
+                <h4 className="font-semibold text-purple-900 mb-2">Introduction</h4>
+                <p className="text-sm text-gray-700 whitespace-pre-wrap">{stepData.introduction}</p>
+              </div>
+            )}
+
+            {/* Sections */}
+            {stepData.sections && stepData.sections.length > 0 && (
+              <div className="space-y-4 mb-6">
+                <h4 className="font-semibold text-purple-900">Main Sections</h4>
+                {stepData.sections.map((section: any, idx: number) => (
+                  <div key={idx} className="border border-gray-200 rounded-lg p-4">
+                    <h5 className="font-medium text-gray-900 mb-2">
+                      {section.section_number}. {section.heading}
+                    </h5>
+                    {section.subsections && section.subsections.length > 0 && (
+                      <ul className="list-disc list-inside text-sm text-gray-700 ml-4 space-y-1">
+                        {section.subsections.map((sub: string, subIdx: number) => (
+                          <li key={subIdx}>{sub}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Conclusion */}
+            {stepData.conclusion && (
+              <div className="p-4 bg-purple-50 rounded-lg">
+                <h4 className="font-semibold text-purple-900 mb-2">Conclusion</h4>
+                <p className="text-sm text-gray-700 whitespace-pre-wrap">{stepData.conclusion}</p>
+              </div>
+            )}
+
+            {/* Estimated word count */}
+            {stepData.estimated_word_count && (
+              <div className="mt-4 text-sm text-gray-600">
+                Estimated word count: <span className="font-semibold">{stepData.estimated_word_count}</span>
+              </div>
+            )}
+          </div>
+
+          {/* LLM Prompt Display */}
+          {stepData.llm_prompt && (
+            <PromptDisplay prompt={stepData.llm_prompt} />
+          )}
+        </div>
+      )}
+
+      <StepNavigation
+        currentStep={6}
+        isExecuting={isExecuting}
+        canExecute={!executionComplete && !isExecuting}
+        canSkip={!isExecuting}
+        onExecute={handleExecute}
+        onSkip={handleSkip}
+        onSaveAndPause={handleSaveAndPause}
+        executionComplete={executionComplete}
+        sessionId={sessionId}
+        hideNavigation={true}
+      />
+    </StepContainer>
+  );
+}

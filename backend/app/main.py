@@ -68,13 +68,17 @@ async def health_check():
 
 
 # Register API routers
-from app.api.routes import auth, sessions, steps, reviewer, stats
+from app.api.routes import auth, sessions, steps, reviewer, stats, webinar_sessions, webinar_steps
 
 app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(sessions.router, prefix="/api/sessions", tags=["Sessions"])
 app.include_router(steps.router)  # Steps router already has /api/steps prefix defined
 app.include_router(reviewer.router, prefix="/api/reviewer", tags=["Reviewer"])
 app.include_router(stats.router, prefix="/api/stats", tags=["Statistics"])
+
+# Webinar workflow routers
+app.include_router(webinar_sessions.router, prefix="/api/webinar-sessions", tags=["Webinar Sessions"])
+app.include_router(webinar_steps.router)  # Webinar steps router already has /api/webinar-steps prefix defined
 
 
 if __name__ == "__main__":
