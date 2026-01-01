@@ -77,6 +77,33 @@ interface SessionListItem {
   steps_completed: number;
   steps_skipped: number;
   schema_version?: number;  // 1 = old (Steps 21=Checklist, 22=Export), 2 = new (swapped)
+  // Webinar-specific fields (optional for backward compatibility)
+  webinar_topic?: string;
+  guest_name?: string;
+  content_format?: string;
+  session_type?: 'blog' | 'webinar';  // Discriminator field
+}
+
+// Webinar workflow interfaces
+interface WebinarSessionCreateRequest {
+  webinar_topic: string;
+  guest_name?: string;
+  guest_credentials?: string;
+  target_audience?: string;
+  content_format?: 'ghostwritten' | 'conversational';
+}
+
+interface WebinarSessionResponse {
+  session_id: string;
+  created_at: string;
+  current_step: number;
+  status: string;
+  webinar_topic: string;
+  guest_name?: string;
+  guest_credentials?: string;
+  target_audience?: string;
+  content_format: string;
+  schema_version: number;
 }
 
 interface PaginationInfo {
@@ -437,6 +464,31 @@ class ApiClient {
     if (!response.ok) {
       const error: ApiError = await response.json();
       throw new Error(error.detail || `Failed to skip step ${stepNumber}`);
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Skip a webinar workflow step with reason
+   */
+  async skipWebinarStep(
+    stepNumber: number,
+    request: StepSkipRequest,
+    token: string
+  ): Promise<StepResponse> {
+    const response = await this.authenticatedRequest(
+      `/api/webinar-steps/skip?step_number=${stepNumber}`,
+      token,
+      {
+        method: 'POST',
+        body: JSON.stringify(request),
+      }
+    );
+
+    if (!response.ok) {
+      const error: ApiError = await response.json();
+      throw new Error(error.detail || `Failed to skip webinar step ${stepNumber}`);
     }
 
     return response.json();
@@ -959,6 +1011,285 @@ class ApiClient {
 
     return response.json();
   }
+
+  // ============================================================================
+  // WEBINAR WORKFLOW API METHODS
+  // ============================================================================
+
+  /**
+   * Create a new webinar-to-blog session
+   */
+  async createWebinarSession(request: WebinarSessionCreateRequest, token: string): Promise<WebinarSessionResponse> {
+    const response = await this.authenticatedRequest(
+      '/api/webinar-sessions',
+      token,
+      {
+        method: 'POST',
+        body: JSON.stringify(request)
+      }
+    );
+
+    if (!response.ok) {
+      const error: ApiError = await response.json();
+      throw new Error(error.detail || 'Failed to create webinar session');
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Get webinar session state
+   */
+  async getWebinarSession(sessionId: string, token: string): Promise<any> {
+    const response = await this.authenticatedRequest(
+      `/api/webinar-sessions/${encodeURIComponent(sessionId)}`,
+      token
+    );
+
+    if (!response.ok) {
+      const error: ApiError = await response.json();
+      throw new Error(error.detail || 'Failed to fetch webinar session');
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Pause webinar session
+   */
+  async pauseWebinarSession(sessionId: string, token: string): Promise<any> {
+    const response = await this.authenticatedRequest(
+      `/api/webinar-sessions/${encodeURIComponent(sessionId)}/pause`,
+      token,
+      { method: 'DELETE' }
+    );
+
+    if (!response.ok) {
+      const error: ApiError = await response.json();
+      throw new Error(error.detail || 'Failed to pause webinar session');
+    }
+
+    return response.json();
+  }
+
+  /**
+   * List all active/paused webinar sessions
+   */
+  async listActiveWebinarSessions(token: string): Promise<{ sessions: any[] }> {
+    const response = await this.authenticatedRequest(
+      '/api/webinar-sessions/active/list',
+      token
+    );
+
+    if (!response.ok) {
+      const error: ApiError = await response.json();
+      throw new Error(error.detail || 'Failed to list active webinar sessions');
+    }
+
+    return response.json();
+  }
+
+  /**
+   * List all webinar sessions with pagination (for Creator history view)
+   */
+  async listCreatorWebinarSessions(
+    statusFilter?: string,
+    page: number = 1,
+    pageSize: number = 5,
+    token?: string
+  ): Promise<SessionListResponse> {
+    const params = new URLSearchParams();
+    if (statusFilter) {
+      params.append('status_filter', statusFilter);
+    }
+    params.append('page', page.toString());
+    params.append('page_size', pageSize.toString());
+
+    const queryString = params.toString();
+    const endpoint = `/api/webinar-sessions?${queryString}`;
+
+    const response = await this.authenticatedRequest(endpoint, token || '');
+
+    if (!response.ok) {
+      const error: ApiError = await response.json();
+      throw new Error(error.detail || 'Failed to list webinar sessions');
+    }
+
+    return response.json();
+  }
+
+  // Webinar Step Execution Methods
+  async executeWebinarStep1(sessionId: string, token: string, inputData: any): Promise<StepResponse> {
+    return this.executeWebinarStep(sessionId, 1, 'topic', token, inputData);
+  }
+
+  async executeWebinarStep2(sessionId: string, token: string): Promise<StepResponse> {
+    return this.executeWebinarStep(sessionId, 2, 'competitor-fetch', token);
+  }
+
+  /**
+   * Step 2 Phase 2: Fetch Full Content for Selected Competitors
+   *
+   * ADDED: 2025-01-02 to fix bug where Step 3 analyzed 300-char snippets instead of full blogs.
+   *
+   * WORKFLOW:
+   * - Phase 1 (executeWebinarStep2): Searches for competitors, returns snippets
+   * - Phase 2 (this method): User selects competitors, fetches full content using Tavily extract
+   *
+   * @param sessionId - Current webinar session ID
+   * @param selectedUrls - Array of competitor URLs to fetch full content for
+   * @param token - JWT authentication token
+   * @returns StepResponse with updated competitor data including full content
+   */
+  async fetchSelectedWebinarCompetitors(sessionId: string, selectedUrls: string[], token: string): Promise<StepResponse> {
+    const response = await fetch(`${this.baseUrl}/api/webinar-steps/2/fetch-selected`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        session_id: sessionId,
+        input_data: {
+          selected_urls: selectedUrls  // URLs user selected from Phase 1 results
+        }
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Failed to fetch selected competitors' }));
+      throw new Error(error.detail || 'Failed to fetch selected competitors');
+    }
+
+    return response.json();
+  }
+
+  async executeWebinarStep3(sessionId: string, token: string): Promise<StepResponse> {
+    return this.executeWebinarStep(sessionId, 3, 'competitor-analysis', token);
+  }
+
+  async executeWebinarStep4(sessionId: string, token: string, inputData: any): Promise<StepResponse> {
+    return this.executeWebinarStep(sessionId, 4, 'transcript', token, inputData);
+  }
+
+  async executeWebinarStep5(sessionId: string, token: string, inputData: any): Promise<StepResponse> {
+    return this.executeWebinarStep(sessionId, 5, 'guidelines', token, inputData);
+  }
+
+  async executeWebinarStep6(sessionId: string, token: string): Promise<StepResponse> {
+    return this.executeWebinarStep(sessionId, 6, 'outline', token);
+  }
+
+  async executeWebinarStep7(sessionId: string, token: string): Promise<StepResponse> {
+    return this.executeWebinarStep(sessionId, 7, 'llm-optimization', token);
+  }
+
+  async executeWebinarStep8(sessionId: string, token: string): Promise<StepResponse> {
+    return this.executeWebinarStep(sessionId, 8, 'landing-page', token);
+  }
+
+  async executeWebinarStep9(sessionId: string, token: string): Promise<StepResponse> {
+    return this.executeWebinarStep(sessionId, 9, 'infographic', token);
+  }
+
+  async executeWebinarStep10(sessionId: string, token: string): Promise<StepResponse> {
+    return this.executeWebinarStep(sessionId, 10, 'title', token);
+  }
+
+  async executeWebinarStep11(sessionId: string, token: string): Promise<StepResponse> {
+    return this.executeWebinarStep(sessionId, 11, 'draft', token);
+  }
+
+  async executeWebinarStep12(sessionId: string, token: string): Promise<StepResponse> {
+    return this.executeWebinarStep(sessionId, 12, 'meta', token);
+  }
+
+  async executeWebinarStep13(sessionId: string, token: string): Promise<StepResponse> {
+    return this.executeWebinarStep(sessionId, 13, 'ai-signal', token);
+  }
+
+  async executeWebinarStep14(sessionId: string, token: string): Promise<StepResponse> {
+    return this.executeWebinarStep(sessionId, 14, 'export', token);
+  }
+
+  async executeWebinarStep15(sessionId: string, token: string, inputData: any): Promise<StepResponse> {
+    return this.executeWebinarStep(sessionId, 15, 'review', token, inputData);
+  }
+
+  /**
+   * Download exported webinar blog markdown file
+   *
+   * ADDED: 2025-01-02 to provide download functionality for Step 14 exports
+   *
+   * @param sessionId - Webinar session identifier
+   * @param token - JWT authentication token
+   * @throws Error if download fails or export file not found
+   */
+  async downloadWebinarBlog(sessionId: string, token: string): Promise<void> {
+    const response = await this.authenticatedRequest(
+      `/api/webinar-steps/${sessionId}/download`,
+      token,
+      {
+        method: 'GET',
+      }
+    );
+
+    if (!response.ok) {
+      const error: ApiError = await response.json().catch(() => ({ detail: 'Failed to download blog' }));
+      throw new Error(error.detail || 'Failed to download webinar blog export');
+    }
+
+    // Extract filename from Content-Disposition header or use default
+    const contentDisposition = response.headers.get('Content-Disposition');
+    let filename = 'webinar_blog_export.md';
+    if (contentDisposition) {
+      const filenameMatch = contentDisposition.match(/filename="(.+)"/);
+      if (filenameMatch) {
+        filename = filenameMatch[1];
+      }
+    }
+
+    // Create blob from response and trigger browser download
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  }
+
+  /**
+   * Generic webinar step execution method
+   */
+  private async executeWebinarStep(
+    sessionId: string,
+    stepNumber: number,
+    stepEndpoint: string,
+    token: string,
+    inputData?: any
+  ): Promise<StepResponse> {
+    const response = await this.authenticatedRequest(
+      `/api/webinar-steps/${stepNumber}/${stepEndpoint}`,
+      token,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          session_id: sessionId,
+          input_data: inputData
+        })
+      }
+    );
+
+    if (!response.ok) {
+      const error: ApiError = await response.json();
+      throw new Error(error.detail || `Failed to execute webinar step ${stepNumber}`);
+    }
+
+    return response.json();
+  }
 }
 
 // Export singleton instance
@@ -981,5 +1312,7 @@ export type {
   SessionError,
   SkipRateDetail,
   CreatorStatsResponse,
-  ReviewerStatsResponse
+  ReviewerStatsResponse,
+  WebinarSessionCreateRequest,
+  WebinarSessionResponse
 };

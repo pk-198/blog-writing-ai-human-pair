@@ -65,3 +65,8 @@ out/
 *.log
 logs/
 backend.log
+COMMENTS_ADDED_2025-01-02.md
+.gitignore
+WEBINAR_BUGFIXES_2025-01-02.md
+webinar-PRD.md
+WEBINAR_IMPLEMENTATION.md

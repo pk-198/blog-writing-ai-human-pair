@@ -12,6 +12,9 @@ interface SessionCardProps {
 }
 
 const SessionCard: React.FC<SessionCardProps> = ({ session, onViewSession }) => {
+  // Check if this is a webinar session
+  const isWebinar = (session as any).session_type === 'webinar';
+
   // Status badge colors
   const getStatusColor = (status: string): string => {
     switch (status.toLowerCase()) {
@@ -50,13 +53,28 @@ const SessionCard: React.FC<SessionCardProps> = ({ session, onViewSession }) => 
     return text.substring(0, maxLength) + '...';
   };
 
+  // Get display title and theme based on session type
+  const displayTitle = isWebinar ? (session as any).webinar_topic : session.primary_keyword;
+  const themeColor = isWebinar ? 'purple' : 'blue';
+  const borderColor = isWebinar ? 'border-purple-200' : 'border-gray-200';
+  const progressBarColor = isWebinar ? 'bg-purple-600' : 'bg-blue-600';
+
   return (
-    <div className="bg-white border border-gray-200 rounded-lg p-6 hover:shadow-lg transition-shadow duration-200">
-      {/* Header with keyword and status */}
+    <div className={`bg-white border ${borderColor} rounded-lg p-6 hover:shadow-lg transition-shadow duration-200`}>
+      {/* Header with session type badge, title, and status */}
       <div className="flex justify-between items-start mb-3">
-        <h3 className="text-lg font-semibold text-gray-900 flex-1 pr-4">
-          {session.primary_keyword}
-        </h3>
+        <div className="flex-1 pr-4">
+          <div className="flex items-center gap-2 mb-1">
+            {isWebinar && (
+              <span className="bg-purple-600 text-white text-xs font-bold px-2 py-1 rounded">
+                WEBINAR
+              </span>
+            )}
+            <h3 className="text-lg font-semibold text-gray-900">
+              {displayTitle}
+            </h3>
+          </div>
+        </div>
         <span
           className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(
             session.status
@@ -66,10 +84,19 @@ const SessionCard: React.FC<SessionCardProps> = ({ session, onViewSession }) => 
         </span>
       </div>
 
-      {/* Blog type description */}
-      <p className="text-sm text-gray-600 mb-4 line-clamp-2">
-        {truncateText(session.blog_type)}
-      </p>
+      {/* Session details - different for webinar vs blog */}
+      {isWebinar ? (
+        <div className="text-sm text-gray-600 mb-4 space-y-1">
+          {(session as any).guest_name && (
+            <p className="text-purple-600">Guest: {(session as any).guest_name}</p>
+          )}
+          <p className="capitalize">{(session as any).content_format || 'ghostwritten'} format</p>
+        </div>
+      ) : (
+        <p className="text-sm text-gray-600 mb-4 line-clamp-2">
+          {truncateText(session.blog_type)}
+        </p>
+      )}
 
       {/* Progress bar */}
       <div className="mb-4">
@@ -79,7 +106,7 @@ const SessionCard: React.FC<SessionCardProps> = ({ session, onViewSession }) => 
         </div>
         <div className="w-full bg-gray-200 rounded-full h-2">
           <div
-            className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+            className={`${progressBarColor} h-2 rounded-full transition-all duration-300`}
             style={{ width: `${session.progress_percentage}%` }}
           />
         </div>
@@ -116,6 +143,8 @@ const SessionCard: React.FC<SessionCardProps> = ({ session, onViewSession }) => 
         className={`w-full ${
           session.status === 'active' || session.status === 'paused'
             ? 'bg-green-600 hover:bg-green-700'
+            : isWebinar
+            ? 'bg-purple-600 hover:bg-purple-700'
             : 'bg-blue-600 hover:bg-blue-700'
         } text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200`}
       >

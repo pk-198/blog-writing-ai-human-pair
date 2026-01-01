@@ -784,6 +784,9 @@ Suggest landing page opportunities that complement the blog type and purpose."""
         contextual_qa: str = ""
     ) -> tuple[Dict[str, Any], str]:
         """Suggest infographic opportunities based on holistic blog context."""
+        # NOTE: Returns "infographic_options" field to maintain backward compatibility with standard blog workflow
+        # Webinar workflow maps this to "infographic_ideas" for frontend (webinar_step_implementations.py line 540)
+        # Standard blog workflow uses "infographic_options" directly (step_implementations.py line 1308)
         system_prompt = """You are a visual content strategist creating infographics for blog content.
 
 CRITICAL INSTRUCTIONS:
@@ -1356,14 +1359,17 @@ Return just the meta description text (no JSON)."""
 Primary Keyword: {primary_keyword}
 Secondary Keywords: {', '.join(secondary_keywords[:3])}
 
-Blog Summary:
-{blog_summary[:500]}
+Blog Outline (what the blog covers):
+{blog_summary if blog_summary else 'No outline provided'}
 {blog_type_section}
 {expert_section}
 {qa_section}
 {company_context}
 
 Generate the meta description that aligns with the blog type, expert guidance, and Q&A insights."""
+        # NOTE (2025-01-02): Label changed from "Blog Summary:" to "Blog Outline (what the blog covers):"
+        # This is more accurate for webinar workflow which passes formatted outline instead of blog draft.
+        # The 'blog_summary' parameter is backward-compatible - accepts both draft summaries and outlines.
 
         response = await self._call_gpt4(system_prompt, user_prompt)
         return response.strip(), self._last_full_prompt
@@ -1662,7 +1668,7 @@ IMPORTANT: Use these exact field names. Include the FULL cleaned content. Use si
         user_prompt = f"""Content to clean:
 {blog_content}
 
-Fix all AI signals and return cleaned version."""
+# TASK : Fix all AI signals and return cleaned version."""
 
         response = await self._call_gpt4(
             system_prompt,
@@ -1675,6 +1681,468 @@ Fix all AI signals and return cleaned version."""
         except json.JSONDecodeError as e:
             logger.error(f"OpenAI JSON parse error: {e}")
             logger.debug(f"Raw response: {response[:500]}")
+            raise ValueError(f"Invalid JSON from OpenAI: {str(e)}")
+
+    # ========================================
+    # WEBINAR WORKFLOW METHODS
+    # ========================================
+
+    async def analyze_webinar_competitors(
+        self,
+        webinar_topic: str,
+        competitor_summaries: List[Dict[str, Any]]  # FIX (2025-01-02): Changed from List[Dict[str, str]] to allow int word_count
+    ) -> tuple[Dict[str, Any], str]:
+        """
+        Analyze competitor content for webinar topic.
+        Identifies common topics, structural patterns, and writing style.
+
+        FIXED (2025-01-02): Now receives and analyzes FULL blog content instead of 300-char snippets.
+
+        Args:
+            webinar_topic: Topic of the webinar
+            competitor_summaries: List of competitor content with fields:
+                - title (str): Blog title
+                - content (str): FULL blog text (5000+ chars)
+                - url (str): Blog URL
+                - word_count (int): Number of words in content
+
+        Returns:
+            Tuple of (analysis_dict, full_prompt_with_variables)
+        """
+        logger.info(f"Analyzing {len(competitor_summaries)} competitor blogs for webinar topic: '{webinar_topic}'")
+
+        # Build competitor content string with FULL content for deep analysis
+        # CRITICAL: Use comp.get('content') which contains full blog text from Tavily extract
+        # Previously used 'snippet' field which was only 300 chars - insufficient for analysis
+        # FIX (2025-01-02): Removed 5000-char truncation to match standard blog workflow
+        # Use full competitor content for comprehensive analysis (GPT-5.2 has 128k token context)
+        # Typical usage: 10 competitors × ~3,500 tokens = ~35k tokens (27% of context window)
+        # Full content needed to analyze conclusions, case studies, CTAs, and complete article structure
+        competitor_text = "\n\n".join([
+            f"COMPETITOR {idx + 1}:\n"
+            f"Title: {comp.get('title', 'N/A')}\n"
+            f"URL: {comp.get('url', 'N/A')}\n"
+            f"Word Count: {comp.get('word_count', 0)}\n"  # word_count is int, not string
+            f"FULL CONTENT:\n{comp.get('content', 'N/A')}"  # Complete blog content for comprehensive analysis
+            for idx, comp in enumerate(competitor_summaries)
+        ])
+
+        system_prompt = """You are an expert content analyst specializing in blog structure and writing style analysis.
+Analyze competitor blogs to identify patterns that will help create a better blog post."""
+
+        user_prompt = f"""Analyze the FULL CONTENT of these competitor blogs about "{webinar_topic}":
+
+{competitor_text}
+
+Based on the COMPLETE blog content above (not just snippets), identify:
+
+1. Common topics all competitors cover - Extract the main themes and subjects discussed across all blogs
+2. Structural patterns - How they organize content (e.g., problem-solution, step-by-step tutorial, listicle, story-driven introduction, technical deep-dive with examples, comparison framework)
+3. Writing style - Analyze tone, voice, perspective (e.g., formal vs casual, first-person vs third-person, conversational vs academic, use of examples/anecdotes, technical depth)
+4. Key insights - What makes their content effective or ineffective (provide 3-5 specific, actionable insights about structure, formatting, content depth, or reader engagement)
+
+Return JSON with:
+{{
+  "common_topics": ["topic1", "topic2", "topic3"],
+  "structural_patterns": "Most blogs use X structure... They typically start with Y... Main sections follow Z pattern...",
+  "writing_style": "Blogs tend to be Y in tone... They use X perspective... Common patterns include...",
+  "key_insights": ["Insight 1 about what works", "Insight 2 about patterns", "Insight 3 about effectiveness"]
+}}"""
+
+        response = await self._call_gpt4(system_prompt, user_prompt, json_mode=True)
+        try:
+            return json.loads(response), self._last_full_prompt
+        except json.JSONDecodeError as e:
+            logger.error(f"OpenAI JSON parse error: {e}")
+            raise ValueError(f"Invalid JSON from OpenAI: {str(e)}")
+
+    async def generate_webinar_outline(
+        self,
+        webinar_topic: str,
+        transcript: str,
+        competitor_insights: Dict[str, Any],
+        guidelines: Dict[str, Any],
+        content_format: str,
+        guest_name: Optional[str] = None
+    ) -> tuple[Dict[str, Any], str]:
+        """
+        Generate blog outline from webinar transcript.
+
+        Args:
+            webinar_topic: Webinar topic
+            transcript: Full webinar transcript
+            competitor_insights: Insights from competitor analysis
+            guidelines: Content guidelines (emphasize, avoid, tone)
+            content_format: 'ghostwritten' or 'conversational'
+            guest_name: Guest name if applicable
+
+        Returns:
+            Tuple of (outline_dict, full_prompt_with_variables)
+        """
+        logger.info(f"Generating outline for webinar: '{webinar_topic}' | Format: {content_format}")
+
+        # Truncate transcript if too long (keep first 8000 words)
+        transcript_words = transcript.split()
+        if len(transcript_words) > 8000:
+            transcript = " ".join(transcript_words[:8000]) + "\n\n[TRANSCRIPT TRUNCATED FOR PROCESSING]"
+            logger.info(f"Transcript truncated from {len(transcript_words)} to 8000 words")
+
+        system_prompt = """You are a content strategist creating blog outlines from webinar content.
+
+Generate a comprehensive outline and return EXACTLY this JSON structure:
+
+{
+  "h1_placeholder": "[Main Title Placeholder - will be finalized later]",
+  "sections": [
+    {
+      "h2": "Main Section Heading",
+      "subsections": [
+        {
+          "h3": "Subsection Heading",
+          "content_type": "list|narrative|data-driven|comparison|tutorial",
+          "description": "What this subsection should cover"
+        }
+      ]
+    }
+  ],
+  "special_sections": {
+    "glossary": {
+      "position": "after_section_2",
+      "terms_count": 5,
+      "description": "Key terms to define"
+    },
+    "conclusion": {
+      "key_takeaways": "Main points to emphasize"
+    }
+  }
+}
+
+IMPORTANT: Use these exact field names. Include at least 5-7 main sections with 2-4 subsections each. Use simple English. Avoid fancy words. Return only valid JSON."""
+
+        emphasize_str = "\n- ".join(guidelines.get("emphasize", [])) if guidelines.get("emphasize") else "None specified"
+        avoid_str = "\n- ".join(guidelines.get("avoid", [])) if guidelines.get("avoid") else "None specified"
+
+        # Content format guidance
+        content_format_guidance = ""
+        if content_format == "ghostwritten":
+            content_format_guidance = "\n\nCONTENT FORMAT: Ghostwritten\nDO NOT write in first person like 'I'. Use professional tone and 'we' when needed. The blog should be written professionally as expert content, not as personal narrative."
+        elif content_format == "conversational":
+            content_format_guidance = "\n\nCONTENT FORMAT: Conversational\nWrite in a conversational, approachable tone. Use 'we' when discussing concepts. Avoid overly formal or academic language."
+
+        user_prompt = f"""Create a blog outline from this webinar transcript.
+
+WEBINAR TRANSCRIPT:
+{{{{TRANSCRIPT:{transcript}}}}}
+
+COMPETITOR INSIGHTS (Focus on what competitors are doing and covering):
+Common Topics (across the competitors): {', '.join(competitor_insights.get('common_topics', []))}
+Structural Patterns: {competitor_insights.get('structural_patterns', 'None')}
+
+CONTENT GUIDELINES:
+Emphasize:
+- {emphasize_str}
+
+Avoid:
+- {avoid_str}
+
+Tone: {guidelines.get('tone', 'conversational')}
+{content_format_guidance}
+
+Create a comprehensive, structured outline with:
+1. h1_placeholder for the main title (not full text - just a placeholder)
+2. 5-7 main sections (h2 headings) covering key topics from the webinar
+3. For each section: 2-4 subsections with h3 headings, content_type, and description
+4. Special sections (glossary, conclusion, etc.)
+
+DO NOT write full introduction or conclusion text - only structural placeholders and descriptions."""
+
+        response = await self._call_gpt4(system_prompt, user_prompt, json_mode=True)
+        try:
+            return json.loads(response), self._last_full_prompt
+        except json.JSONDecodeError as e:
+            logger.error(f"OpenAI JSON parse error: {e}")
+            raise ValueError(f"Invalid JSON from OpenAI: {str(e)}")
+
+    async def plan_webinar_llm_optimization(
+        self,
+        outline_sections: List[Dict[str, Any]]
+    ) -> tuple[Dict[str, Any], str]:
+        """
+        Plan LLM optimization markers (glossary + "What is X" sections) from outline.
+
+        Args:
+            outline_sections: Outline sections from Step 6
+
+        Returns:
+            Tuple of (optimization_dict, full_prompt_with_variables)
+        """
+        logger.info(f"Planning LLM optimization from outline sections")
+
+        # Build section headings with subsections
+        # FIX (2025-01-02): Format subsections as indented list so LLM sees complete outline hierarchy
+        # Example output: "1. Main Heading\n   - Subsection 1\n   - Subsection 2"
+        # Previously only showed h2 headings without subsection details
+        section_headings = []
+        for s in outline_sections:
+            section_headings.append(f"{s.get('section_number')}. {s.get('heading')}")
+            for sub in s.get('subsections', []):
+                section_headings.append(f"   - {sub.get('h3', '')}")  # Indent subsections for clarity
+        sections_str = "\n".join(section_headings)
+
+        system_prompt = """You are an SEO and content optimization expert.
+Identify technical terms and concepts from the blog outline that need explanation."""
+
+        user_prompt = f"""Analyze this blog outline to identify:
+1. 3-4 glossary terms (technical jargon that needs definition)
+2. 2-3 "What is X?" sections (foundational concepts that warrant full explanation)
+
+IMPORTANT: For "What is X?" sections, X should be a SPECIFIC CONCEPT from the outline.
+Examples of correct format:
+- "What is Voice AI?"
+- "What is Natural Language Processing?"
+- "What is Conversational AI?"
+- "What is API latency?"
+
+DO NOT use generic "What is" - always include the specific concept.
+
+OUTLINE SECTIONS (with subsections):
+{sections_str}
+
+For each glossary term, suggest placement in outline.
+For each "What is X" section, suggest placement and provide rationale.
+
+Constraints:
+- Maximum 4 glossary items
+- Maximum 3 "What is X" sections
+- Focus on terms inferred from the outline headings
+
+Return JSON with:
+{{
+  "glossary_items": [
+    {{
+      "term": "AI Calling Agent",
+      "suggested_position": "After Section 2"
+    }}
+  ],
+  "what_is_sections": [
+    {{
+      "topic": "What is Voice AI?",
+      "suggested_position": "Before Section 1",
+      "rationale": "Foundational concept that readers need to understand before diving into the main content"
+    }},
+    {{
+      "topic": "What is Natural Language Processing?",
+      "suggested_position": "After Section 3",
+      "rationale": "Technical concept mentioned in the webinar that needs detailed explanation"
+    }}
+  ]
+}}"""
+
+        response = await self._call_gpt4(system_prompt, user_prompt, json_mode=True)
+        try:
+            return json.loads(response), self._last_full_prompt
+        except json.JSONDecodeError as e:
+            logger.error(f"OpenAI JSON parse error: {e}")
+            raise ValueError(f"Invalid JSON from OpenAI: {str(e)}")
+
+    async def evaluate_webinar_landing_page(
+        self,
+        transcript: str,
+        webinar_topic: str
+    ) -> tuple[Dict[str, Any], str]:
+        """
+        Evaluate landing page opportunities from webinar discussion.
+
+        Args:
+            transcript: Full webinar transcript
+            webinar_topic: Topic of webinar
+
+        Returns:
+            Tuple of (evaluation_dict, full_prompt_with_variables)
+        """
+        logger.info(f"Evaluating landing page potential from webinar: '{webinar_topic}'")
+
+        # Truncate transcript
+        transcript_words = transcript.split()
+        if len(transcript_words) > 6000:
+            transcript = " ".join(transcript_words[:6000])
+
+        system_prompt = """You are a conversion strategist evaluating landing page opportunities.
+First understand what landing pages are from a product manager perspective.
+Analyze the webinar content and return EXACTLY this JSON structure:
+
+{
+  "landing_page_options": [
+    {
+      "title": "Compelling, conversion-focused landing page title",
+      "description": "Why this would work as a landing page and how it complements the blog",
+      "target_audience": "Specific audience segment this targets",
+      "conversion_points": [
+        "Point 1 to include on the landing page",
+        "Point 2 to include on the landing page",
+        "Point 3 to include on the landing page"
+      ],
+      "cta_suggestions": [
+        "Call-to-action option 1",
+        "Call-to-action option 2"
+      ]
+    }
+  ],
+  "recommendation": "Which option is recommended and why"
+}
+
+IMPORTANT: Use these exact field names. Provide exactly 2 landing page options. Use simple English. Avoid fancy words. Return only valid JSON."""
+
+        user_prompt = f"""Analyze this webinar transcript for landing page opportunities.
+
+WEBINAR TOPIC: {{{{WEBINAR_TOPIC:{webinar_topic}}}}}
+
+TRANSCRIPT:
+{{{{TRANSCRIPT:{transcript}}}}}
+
+Evaluate:
+1. Are there specific products/features discussed that warrant a landing page?
+2. What compelling page title would drive conversions?
+3. Why would this work as a landing page?
+4. What specific audience segment does it target?
+5. What conversion points should be on the landing page?
+6. What CTAs make sense?
+
+DO NOT suggest a webinar landing page. Focus on products/topics/features discussed in the webinar.
+Suggest exactly 2 landing page ideas with complete details for each field.
+
+Based on the webinar content above, identify landing page opportunities."""
+
+        response = await self._call_gpt4(system_prompt, user_prompt, json_mode=True)
+        try:
+            return json.loads(response), self._last_full_prompt
+        except json.JSONDecodeError as e:
+            logger.error(f"OpenAI JSON parse error: {e}")
+            raise ValueError(f"Invalid JSON from OpenAI: {str(e)}")
+
+    async def generate_webinar_blog_draft(
+        self,
+        transcript: str,
+        outline: Dict[str, Any],
+        guidelines: Dict[str, Any],
+        llm_optimization: Dict[str, Any],
+        title: str,
+        content_format: str,
+        guest_name: Optional[str] = None
+    ) -> tuple[Dict[str, Any], str]:
+        """
+        Generate complete blog draft from webinar transcript.
+
+        Args:
+            transcript: Full webinar transcript
+            outline: Outline from Step 6
+            guidelines: Content guidelines
+            llm_optimization: LLM markers from Step 7
+            title: Blog title
+            content_format: 'ghostwritten' or 'conversational'
+            guest_name: Guest name if applicable
+
+        Returns:
+            Tuple of (draft_dict, full_prompt_with_variables)
+        """
+        logger.info(f"Generating blog draft | Format: {content_format} | Target: 2000 words")
+
+        # Truncate transcript to stay within token limits (keep first 10k words)
+        transcript_words = transcript.split()
+        if len(transcript_words) > 10000:
+            transcript = " ".join(transcript_words[:10000])
+
+        # Format outline sections for LLM prompt with correct field names
+        # CRITICAL FIX (2025-01-02): Use correct field names from Step 6 output
+        # Step 6 outputs: {"sections": [{"h2": "...", "subsections": [{"h3": "...", "content_type": "...", "description": "..."}]}]}
+        # Previously tried to access "section_number" and "heading" which don't exist → caused "None. None" in prompts
+        sections_str = ""
+        for idx, section in enumerate(outline.get("sections", []), 1):
+            # Extract h2 (main section heading) - NOT "heading" field
+            h2_heading = section.get('h2', f'Section {idx}')
+            sections_str += f"\n{idx}. {h2_heading}\n"
+
+            # Extract subsections with h3, content_type, and description
+            # Previously just printed raw dict objects - now properly formatted
+            for subsection in section.get("subsections", []):
+                h3 = subsection.get('h3', '')  # Subsection heading
+                content_type = subsection.get('content_type', '')  # e.g., "explanation", "example", "list"
+                description = subsection.get('description', '')  # What to cover
+                sections_str += f"   - {h3} ({content_type}): {description}\n"
+
+        # Build optimization markers
+        glossary_str = "\n- ".join([item.get("term", "") for item in llm_optimization.get("glossary_items", [])])
+        what_is_str = "\n- ".join([item.get("topic", "") for item in llm_optimization.get("what_is_sections", [])])
+
+        emphasize_str = "\n- ".join(guidelines.get("emphasize", [])) if guidelines.get("emphasize") else "None"
+        avoid_str = "\n- ".join(guidelines.get("avoid", [])) if guidelines.get("avoid") else "None"
+
+        voice_instruction = ""
+        if content_format == "ghostwritten":
+            voice_instruction = f"Write in FIRST PERSON as if {guest_name or 'the guest'} is the author. Use 'I', 'we', 'my experience'. The guest is sharing their insights directly."
+        else:
+            voice_instruction = "Write as a CONVERSATIONAL discussion between host and guest. Include dialogue with speaker labels. Add contextual notes where helpful."
+
+        system_prompt = f"""You are an expert blog writer and ghostwriter.
+Write a complete, engaging blog post based on this webinar transcript.
+
+{voice_instruction}
+
+IMPORTANT: Quote the guest directly when impactful. Maintain conversational tone. Apply SEO best practices."""
+
+        user_prompt = f"""Write a complete blog post based on this webinar transcript.
+
+TITLE: {title}
+
+WEBINAR TRANSCRIPT:
+{transcript}
+
+OUTLINE TO FOLLOW:
+Introduction: {outline.get('introduction', '')}
+
+Sections:
+{sections_str}
+
+Conclusion: {outline.get('conclusion', '')}
+
+CONTENT GUIDELINES:
+Emphasize:
+- {emphasize_str}
+
+Avoid:
+- {avoid_str}
+
+Tone: {guidelines.get('tone', 'conversational')}
+
+LLM OPTIMIZATIONS TO INSERT:
+Glossary Terms:
+- {glossary_str}
+
+"What is X" Sections:
+- {what_is_str}
+
+REQUIREMENTS:
+1. Follow outline structure exactly
+2. Speak in first person if ghostwritten - And since its ghostwritten , do NOT mention stuff like - "As I said on the webinar" as we are assuming that the author/guest is writing this blog  and there was no webinar etc
+3. Maintain {content_format} format. 
+4. Apply SEO best practices
+5. Insert glossary/what-is sections in the right places in the blog
+6. Target word count: 2000+ words
+7. Use markdown formatting (headers, bold, lists, etc.)
+
+Return JSON with:
+{{
+  "content": "# {title}\\n\\nFull blog content in markdown...",
+  "word_count": 2047,
+  "sections_completed": 7,
+  "llm_markers_inserted": 5
+}}"""
+
+        response = await self._call_gpt4(system_prompt, user_prompt, json_mode=True)
+        try:
+            return json.loads(response), self._last_full_prompt
+        except json.JSONDecodeError as e:
+            logger.error(f"OpenAI JSON parse error: {e}")
             raise ValueError(f"Invalid JSON from OpenAI: {str(e)}")
 
 

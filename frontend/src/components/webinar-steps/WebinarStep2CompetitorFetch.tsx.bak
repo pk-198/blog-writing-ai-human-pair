@@ -1,0 +1,293 @@
+/**
+ * Webinar Step 2: Competitor Content Fetch
+ * AI searches for competitor pages, user selects, then fetches content
+ * Owner: AI + Creator - Adapted with selection UI
+ */
+
+'use client';
+
+import React, { useState } from 'react';
+import StepContainer from '../shared/StepContainer';
+import SuccessBanner from '../shared/SuccessBanner';
+import ErrorBanner from '../shared/ErrorBanner';
+import ProgressAnimation from '../shared/ProgressAnimation';
+import StepNavigation from '../shared/StepNavigation';
+import { api } from '@/lib/api';
+import { getToken } from '@/lib/auth';
+
+interface WebinarStep2Props {
+  sessionId: string;
+  initialData?: any;
+}
+
+export default function WebinarStep2CompetitorFetch({ sessionId, initialData }: WebinarStep2Props) {
+  // Check if we have fetched competitors (final state) vs just search results
+  const hasFetchedContent = initialData?.competitors?.some((c: any) => c.content || c.word_count);
+
+  const [isExecuting, setIsExecuting] = useState(false);
+  const [executionComplete, setExecutionComplete] = useState(hasFetchedContent || false);
+  const [stepData, setStepData] = useState(initialData || null);
+  const [error, setError] = useState<string | null>(null);
+
+  // Selection state
+  const [selectedUrls, setSelectedUrls] = useState<string[]>([]);
+  const [isFetching, setIsFetching] = useState(false);
+
+  // Phase 1: Search for competitors
+  const handleExecute = async () => {
+    setIsExecuting(true);
+    setError(null);
+
+    try {
+      const token = getToken();
+      if (!token) throw new Error('Not authenticated');
+
+      const result = await api.executeWebinarStep2(sessionId, token);
+
+      if (result.success) {
+        setStepData(result.data);
+        // After search, show selection UI (not complete yet)
+        setExecutionComplete(false);
+        // Auto-select top 3 results
+        const topUrls = result.data.competitors?.slice(0, 3).map((c: any) => c.url) || [];
+        setSelectedUrls(topUrls);
+      } else {
+        setError(result.error || 'Step execution failed');
+      }
+    } catch (err: any) {
+      setError(err.message || 'An error occurred');
+    } finally {
+      setIsExecuting(false);
+    }
+  };
+
+  // Phase 2: Fetch selected competitors
+  const handleFetchSelected = async () => {
+    if (selectedUrls.length === 0) {
+      setError('Please select at least one competitor to fetch');
+      return;
+    }
+
+    setIsFetching(true);
+    setError(null);
+
+    try {
+      const token = getToken();
+      if (!token) throw new Error('Not authenticated');
+
+      // Call backend to fetch full content for selected URLs
+      // For now, mark as complete - backend enhancement needed
+      setExecutionComplete(true);
+
+      // Update step data to mark selected competitors
+      const updatedCompetitors = stepData.competitors.map((comp: any) => ({
+        ...comp,
+        selected: selectedUrls.includes(comp.url)
+      }));
+
+      setStepData({
+        ...stepData,
+        competitors: updatedCompetitors,
+        selected_count: selectedUrls.length
+      });
+
+    } catch (err: any) {
+      setError(err.message || 'An error occurred');
+    } finally {
+      setIsFetching(false);
+    }
+  };
+
+  // Toggle competitor selection
+  const toggleSelection = (url: string) => {
+    setSelectedUrls(prev =>
+      prev.includes(url)
+        ? prev.filter(u => u !== url)
+        : [...prev, url]
+    );
+  };
+
+  const handleSkip = async () => {
+    const reason = prompt('Why are you skipping this step?');
+    if (!reason) return;
+
+    try {
+      const token = getToken();
+      if (!token) throw new Error('Not authenticated');
+
+      await api.skipStep(2, { session_id: sessionId, reason }, token);
+      setExecutionComplete(true);
+    } catch (err: any) {
+      setError(err.message || 'Failed to skip step');
+    }
+  };
+
+  const handleSaveAndPause = async () => {
+    window.location.href = '/creator/dashboard';
+  };
+
+  return (
+    <StepContainer
+      stepNumber={2}
+      stepName="Competitor Content Fetch"
+      owner="AI"
+      description="AI fetches competitor webinar/podcast blogs for topic analysis"
+    >
+      {!executionComplete && !isExecuting && (
+        <div className="mb-6 p-4 bg-purple-50 border border-purple-200 rounded-lg">
+          <h3 className="font-semibold text-purple-900 mb-2">What happens in this step:</h3>
+          <ul className="list-disc list-inside text-purple-800 space-y-1 text-sm">
+            <li>AI searches for competitor webinar/podcast blogs on similar topics</li>
+            <li>Fetches full content and structure from top results</li>
+            <li>Extracts key patterns for analysis in Step 3</li>
+          </ul>
+        </div>
+      )}
+
+      {isExecuting && (
+        <ProgressAnimation stepNumber={2} stepName="Competitor Content Fetch" estimatedSeconds={40} />
+      )}
+
+      {error && (
+        <ErrorBanner error={error} onRetry={handleExecute} stepNumber={2} stepName="Competitor Content Fetch" />
+      )}
+
+      {/* Phase 2: Selection UI (after search, before fetch) */}
+      {stepData && !executionComplete && !isExecuting && !isFetching && (
+        <div className="space-y-4">
+          <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 mb-4">
+            <h3 className="font-semibold text-purple-900 mb-2">Select Competitors to Analyze</h3>
+            <p className="text-sm text-purple-800">
+              Choose which competitor blogs to fetch and analyze. We've pre-selected the top 3 for you.
+            </p>
+          </div>
+
+          <div className="bg-white border border-purple-200 rounded-lg p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="text-lg font-semibold text-gray-900">
+                Search Results ({stepData.competitors?.length || 0})
+              </h4>
+              <div className="text-sm text-gray-600">
+                {selectedUrls.length} selected
+              </div>
+            </div>
+
+            {stepData.competitors && stepData.competitors.length > 0 ? (
+              <div className="space-y-2 mb-6">
+                {stepData.competitors.map((comp: any, idx: number) => (
+                  <label
+                    key={idx}
+                    className="flex items-start gap-3 p-3 bg-white border-2 border-gray-200 rounded hover:bg-purple-50 cursor-pointer transition-colors"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedUrls.includes(comp.url)}
+                      onChange={() => toggleSelection(comp.url)}
+                      className="mt-1 w-4 h-4 text-purple-600"
+                    />
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-xs font-bold text-purple-600 bg-purple-100 px-2 py-0.5 rounded">
+                          #{comp.rank}
+                        </span>
+                        <h5 className="font-medium text-gray-900">{comp.title}</h5>
+                      </div>
+                      <a
+                        href={comp.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-blue-600 hover:underline block mb-1"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {comp.url}
+                      </a>
+                      {comp.snippet && (
+                        <p className="text-xs text-gray-600 line-clamp-2">{comp.snippet}</p>
+                      )}
+                    </div>
+                  </label>
+                ))}
+              </div>
+            ) : (
+              <p className="text-gray-600">No competitors found</p>
+            )}
+
+            <button
+              onClick={handleFetchSelected}
+              disabled={selectedUrls.length === 0}
+              className="w-full bg-purple-600 text-white font-semibold py-3 px-6 rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              Fetch Selected Competitors ({selectedUrls.length})
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Phase 3: Fetching progress */}
+      {isFetching && (
+        <ProgressAnimation stepNumber={2} stepName="Fetching Competitor Content" estimatedSeconds={30} />
+      )}
+
+      {/* Phase 4: Final results */}
+      {executionComplete && stepData && !isExecuting && !isFetching && (
+        <div className="space-y-4">
+          <SuccessBanner
+            stepNumber={2}
+            stepName="Competitor Content Fetch"
+            message={`Selected ${stepData.selected_count || selectedUrls.length} competitor pages for analysis`}
+          />
+
+          <div className="bg-white border border-purple-200 rounded-lg p-6">
+            <h3 className="text-lg font-semibold text-purple-900 mb-4">
+              Selected Competitors ({stepData.selected_count || selectedUrls.length})
+            </h3>
+            {stepData.competitors && stepData.competitors.length > 0 ? (
+              <div className="space-y-3">
+                {stepData.competitors
+                  .filter((comp: any) => comp.selected || selectedUrls.includes(comp.url))
+                  .map((comp: any, idx: number) => (
+                    <div key={idx} className="border border-purple-200 rounded p-3 bg-purple-50">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-xs font-bold text-purple-600 bg-purple-200 px-2 py-0.5 rounded">
+                              #{comp.rank}
+                            </span>
+                            <h4 className="font-medium text-gray-900">{comp.title}</h4>
+                          </div>
+                          <a
+                            href={comp.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-blue-600 hover:underline"
+                          >
+                            {comp.url}
+                          </a>
+                        </div>
+                        <span className="text-green-600 text-sm">✓ Selected</span>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            ) : (
+              <p className="text-gray-600">No competitors selected</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      <StepNavigation
+        currentStep={2}
+        isExecuting={isExecuting}
+        canExecute={!executionComplete && !isExecuting}
+        canSkip={!isExecuting}
+        onExecute={handleExecute}
+        onSkip={handleSkip}
+        onSaveAndPause={handleSaveAndPause}
+        executionComplete={executionComplete}
+        sessionId={sessionId}
+        hideNavigation={true}
+      />
+    </StepContainer>
+  );
+}

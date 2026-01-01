@@ -53,16 +53,50 @@ export default function CreatorHistoryPage() {
       }
 
       const statusFilterValue = statusFilter === 'all' ? undefined : statusFilter;
-      const response = await api.listCreatorSessions(
-        statusFilterValue,
-        currentPage,
-        pageSize,
-        token
-      );
 
-      setSessions(response.sessions);
-      setPagination(response.pagination);
-      setSessionErrors(response.errors || []);
+      // Fetch both blog and webinar sessions in parallel
+      const [blogResponse, webinarResponse] = await Promise.all([
+        api.listCreatorSessions(statusFilterValue, currentPage, pageSize, token).catch(() => ({
+          sessions: [],
+          pagination: { page: 1, page_size: pageSize, total_count: 0, total_pages: 0, has_next: false, has_prev: false },
+          errors: []
+        })),
+        api.listCreatorWebinarSessions(statusFilterValue, currentPage, pageSize, token).catch(() => ({
+          sessions: [],
+          pagination: { page: 1, page_size: pageSize, total_count: 0, total_pages: 0, has_next: false, has_prev: false },
+          errors: []
+        }))
+      ]);
+
+      // Merge sessions and mark types
+      const allSessions = [
+        ...(blogResponse.sessions || []).map(s => ({ ...s, session_type: 'blog' as const })),
+        ...(webinarResponse.sessions || [])  // Already has session_type: 'webinar' from backend
+      ].sort((a, b) => {
+        const dateA = new Date(a.updated_at || 0).getTime();
+        const dateB = new Date(b.updated_at || 0).getTime();
+        return dateB - dateA; // Most recent first
+      });
+
+      // Merge pagination (sum total counts)
+      const mergedPagination = {
+        page: currentPage,
+        page_size: pageSize,
+        total_count: (blogResponse.pagination?.total_count || 0) + (webinarResponse.pagination?.total_count || 0),
+        total_pages: Math.ceil(((blogResponse.pagination?.total_count || 0) + (webinarResponse.pagination?.total_count || 0)) / pageSize),
+        has_next: blogResponse.pagination?.has_next || webinarResponse.pagination?.has_next || false,
+        has_prev: blogResponse.pagination?.has_prev || webinarResponse.pagination?.has_prev || false
+      };
+
+      // Merge errors
+      const allErrors = [
+        ...(blogResponse.errors || []),
+        ...(webinarResponse.errors || [])
+      ];
+
+      setSessions(allSessions);
+      setPagination(mergedPagination);
+      setSessionErrors(allErrors);
     } catch (err: any) {
       console.error('Error loading sessions:', err);
       setError(err.message || 'Failed to load sessions');
@@ -75,13 +109,14 @@ export default function CreatorHistoryPage() {
   const filteredSessions = searchTerm
     ? sessions.filter(
         (session) =>
-          session.primary_keyword.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          session.session_id.toLowerCase().includes(searchTerm.toLowerCase())
+          (session.primary_keyword?.toLowerCase().includes(searchTerm.toLowerCase())) ||
+          (session.webinar_topic?.toLowerCase().includes(searchTerm.toLowerCase())) ||
+          (session.session_id?.toLowerCase().includes(searchTerm.toLowerCase()))
       )
     : sessions;
 
   const handleViewSession = (sessionId: string) => {
-    // Find the session to check its status
+    // Find the session to check its type and status
     const session = sessions.find(s => s.session_id === sessionId);
 
     // Safety check: If session not found in current list, don't navigate
@@ -91,12 +126,19 @@ export default function CreatorHistoryPage() {
       return;
     }
 
-    // If active or paused, navigate to current step for quick resume
-    if (session.status === 'active' || session.status === 'paused') {
-      router.push(`/creator/session/${sessionId}/step/${session.current_step}`);
+    const isWebinar = session.session_type === 'webinar';
+
+    // Route to correct page based on session type
+    if (isWebinar) {
+      router.push(`/creator/webinar-session/${sessionId}`);
     } else {
-      // For completed/expired sessions, show overview page
-      router.push(`/creator/session/${sessionId}`);
+      // For blog sessions: navigate to current step if active/paused
+      if (session.status === 'active' || session.status === 'paused') {
+        router.push(`/creator/session/${sessionId}/step/${session.current_step}`);
+      } else {
+        // For completed/expired sessions, show overview page
+        router.push(`/creator/session/${sessionId}`);
+      }
     }
   };
 

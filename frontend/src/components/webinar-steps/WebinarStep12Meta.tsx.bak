@@ -1,0 +1,161 @@
+/**
+ * Webinar Step 12: Meta Description
+ * AI generates SEO-optimized meta description (140-160 chars)
+ * Owner: AI - Adapted from Step19MetaDescription
+ */
+
+'use client';
+
+import React, { useState } from 'react';
+import StepContainer from '../shared/StepContainer';
+import SuccessBanner from '../shared/SuccessBanner';
+import ErrorBanner from '../shared/ErrorBanner';
+import ProgressAnimation from '../shared/ProgressAnimation';
+import StepNavigation from '../shared/StepNavigation';
+import PromptDisplay from '../shared/PromptDisplay';
+import { api } from '@/lib/api';
+import { getToken } from '@/lib/auth';
+
+interface WebinarStep12Props {
+  sessionId: string;
+  initialData?: any;
+}
+
+export default function WebinarStep12Meta({ sessionId, initialData }: WebinarStep12Props) {
+  const [isExecuting, setIsExecuting] = useState(false);
+  const [executionComplete, setExecutionComplete] = useState(
+    initialData && Object.keys(initialData).length > 0
+  );
+  const [stepData, setStepData] = useState(initialData || null);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleExecute = async () => {
+    setIsExecuting(true);
+    setError(null);
+
+    try {
+      const token = getToken();
+      if (!token) throw new Error('Not authenticated');
+
+      const result = await api.executeWebinarStep12(sessionId, token);
+
+      if (result.success) {
+        setStepData(result.data);
+        setExecutionComplete(true);
+      } else {
+        setError(result.error || 'Step execution failed');
+      }
+    } catch (err: any) {
+      setError(err.message || 'An error occurred');
+    } finally {
+      setIsExecuting(false);
+    }
+  };
+
+  const handleSkip = async () => {
+    const reason = prompt('Why are you skipping this step?');
+    if (!reason) return;
+
+    try {
+      const token = getToken();
+      if (!token) throw new Error('Not authenticated');
+
+      await api.skipStep(12, { session_id: sessionId, reason }, token);
+      setExecutionComplete(true);
+    } catch (err: any) {
+      setError(err.message || 'Failed to skip step');
+    }
+  };
+
+  const handleSaveAndPause = async () => {
+    window.location.href = '/creator/dashboard';
+  };
+
+  const handleCopyToClipboard = () => {
+    if (stepData?.meta_description) {
+      navigator.clipboard.writeText(stepData.meta_description);
+      alert('Meta description copied to clipboard!');
+    }
+  };
+
+  return (
+    <StepContainer
+      stepNumber={12}
+      stepName="Meta Description"
+      owner="AI"
+      description="AI generates SEO-optimized meta description (140-160 chars)"
+    >
+      {!executionComplete && !isExecuting && (
+        <div className="mb-6 p-4 bg-purple-50 border border-purple-200 rounded-lg">
+          <h3 className="font-semibold text-purple-900 mb-2">What happens in this step:</h3>
+          <ul className="list-disc list-inside text-purple-800 space-y-1 text-sm">
+            <li>AI generates concise meta description (140-160 characters)</li>
+            <li>Optimized for search engine snippets</li>
+            <li>Incorporates key webinar insights and keywords</li>
+          </ul>
+        </div>
+      )}
+
+      {isExecuting && (
+        <ProgressAnimation stepNumber={12} stepName="Meta Description" estimatedSeconds={15} />
+      )}
+
+      {error && (
+        <ErrorBanner error={error} onRetry={handleExecute} stepNumber={12} stepName="Meta Description" />
+      )}
+
+      {executionComplete && stepData && !isExecuting && (
+        <div className="space-y-4">
+          <SuccessBanner
+            stepNumber={12}
+            stepName="Meta Description"
+            message="Generated SEO-optimized meta description"
+          />
+
+          <div className="bg-white border border-purple-200 rounded-lg p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-purple-900">Meta Description</h3>
+              <button
+                onClick={handleCopyToClipboard}
+                className="bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium py-2 px-4 rounded-lg transition-colors"
+              >
+                📋 Copy
+              </button>
+            </div>
+
+            <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+              <p className="text-gray-900">{stepData.meta_description}</p>
+              <div className="mt-3 flex items-center justify-between text-sm">
+                <span className={`font-medium ${
+                  stepData.character_count >= 140 && stepData.character_count <= 160
+                    ? 'text-green-600'
+                    : 'text-yellow-600'
+                }`}>
+                  {stepData.character_count || stepData.meta_description?.length || 0} characters
+                </span>
+                {stepData.character_count >= 140 && stepData.character_count <= 160 && (
+                  <span className="text-green-600">✓ Optimal length</span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {stepData.llm_prompt && <PromptDisplay prompt={stepData.llm_prompt} />}
+        </div>
+      )}
+
+      <StepNavigation
+        currentStep={12}
+        isExecuting={isExecuting}
+        canExecute={!executionComplete && !isExecuting}
+        canSkip={!isExecuting}
+        onExecute={handleExecute}
+        onSkip={handleSkip}
+        onSaveAndPause={handleSaveAndPause}
+        executionComplete={executionComplete}
+        sessionId={sessionId}
+        hideNavigation={true}
+      />
+    </StepContainer>
+  );
+}
