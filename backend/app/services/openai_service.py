@@ -605,76 +605,75 @@ Create a comprehensive, SEO-optimized outline that:
         expert_opinion: str = "",
         writing_style: str = ""
     ) -> tuple[Dict[str, Any], str]:
-        """Mark sections for LLM/GEO optimization based on outline, keyword, description, and competitor analysis."""
+        """Plan LLM/GEO optimization with nuanced, blog-specific glossary and 'what is' sections."""
         if competitors is None:
             competitors = []
         system_prompt = """You are an SEO expert planning AI optimization.
 
-Analyze the outline and return EXACTLY this JSON structure:
+Analyze the COMPLETE outline (including all H2, H3, and deeper subsections) and return EXACTLY this JSON structure:
 
 {
-  "section_optimizations": [
+  "glossary_items": [
     {
-      "section_name": "H2 Section Name",
-      "needs_glossary": true,
-      "needs_what_is_format": false,
-      "needs_summary_opener": true,
-      "specific_techniques": [
-        "Technique 1 for this section",
-        "Technique 2 for this section"
-      ],
-      "priority": "high|medium|low"
-    }
-  ],
-  "glossary_sections": [
-    {
-      "section": "Section name",
-      "terms_to_define": ["term1", "term2", "term3", "term4", "term5"]
+      "term": "Specific technical term from outline",
+      "reason": "Why this term needs definition (1 sentence)"
     }
   ],
   "what_is_sections": [
     {
-      "section": "Section name where this heading should be added",
-      "heading": "What is AI calling",
-      "topic": "AI calling",
-      "placement": "beginning|middle|end"
+      "heading": "What is [Specific Topic]",
+      "topic": "Specific topic name",
+      "reason": "Why this section is needed (1 sentence)"
     }
-  ],
-  "summary_opener_sections": [
-    "Section 1 that needs 1-line summary opener",
-    "Section 2 that needs 1-line summary opener"
-  ],
-  "general_recommendations": "Overall LLM/GEO optimization strategy for this blog"
+  ]
 }
 
-IMPORTANT: Use these exact field names. Mark at least 2-3 sections for each optimization type. Use simple English. Avoid fancy words. Return only valid JSON."""
+CRITICAL REQUIREMENTS:
+1. Generate EXACTLY 3-4 glossary items (no more, no less)
+2. Generate EXACTLY 2-3 "what is" sections (no more, no less)
+3. Focus on NUANCED, SPECIFIC terms from H3 and deeper subsections (not generic H2 topics)
+4. Avoid basic/generic terms (e.g., DON'T suggest "what is voice AI", "what is API")
+5. Pick unique, blog-specific terms (e.g., DO suggest "what is Direct Inward Dialling (DID)", "what is SIP trunking")
+6. Prioritize technical terms that appear in nested subheadings (H3, H4 levels)
+
+AVOID these generic patterns:
+- "What is [main topic]" (too basic)
+- Common industry terms everyone knows
+- Terms that appear in H2 headings (focus on H3+ instead)
+
+PREFER these nuanced patterns:
+- Specific technical concepts from H3/H4 subsections
+- Niche terms unique to this particular blog topic
+- Domain-specific jargon that needs explanation
+
+Use simple English. Return only valid JSON."""
 
         # Build context sections for the prompt
         keyword_section = f"\n\nPrimary Keyword: {primary_keyword}" if primary_keyword else ""
 
         blog_type_section = ""
         if blog_type:
-            blog_type_section = f"\n\nBlog Description/Topic:\n{blog_type}\n\nIMPORTANT: Use this description to understand the blog's purpose and identify optimization opportunities that align with the intended topic."
+            blog_type_section = f"\n\nBlog Description/Topic:\n{blog_type}\n\nIMPORTANT: Use this description to understand the blog's purpose. Pick glossary and 'what is' sections that are SPECIFIC to this exact topic, not generic terms."
 
         competitor_section = ""
         if competitors:
             competitor_count = len(competitors)
-            competitor_section = f"\n\n=== COMPETITOR INSIGHTS ===\n{competitor_count} competitors have been analyzed. Consider what optimization techniques (glossary terms, what-is sections, summary structures) would help this blog compete effectively."
+            competitor_section = f"\n\n=== COMPETITOR INSIGHTS ===\n{competitor_count} competitors have been analyzed. Identify unique optimization opportunities."
 
         expert_section = ""
         if expert_opinion or writing_style:
             expert_section = "\n\n=== EXPERT GUIDANCE ==="
             if expert_opinion:
-                expert_section += f"\n\nExpert Domain Knowledge:\n{expert_opinion}\n\nIMPORTANT: Plan optimization techniques that complement the expert insights."
+                expert_section += f"\n\nExpert Domain Knowledge:\n{expert_opinion}"
             if writing_style:
-                expert_section += f"\n\nWriting Style Preferences:\n{writing_style}\n\nIMPORTANT: Ensure optimization techniques align with this style."
+                expert_section += f"\n\nWriting Style:\n{writing_style}"
 
         company_context = await self._build_company_context()
 
         # Mark variables for frontend highlighting
         outline_json = json.dumps(outline, indent=2)
 
-        user_prompt = f"""Outline:
+        user_prompt = f"""Complete Outline (analyze ALL levels - H2, H3, H4):
 {{{{OUTLINE:{outline_json}}}}}
 {keyword_section}
 {blog_type_section}
@@ -682,21 +681,19 @@ IMPORTANT: Use these exact field names. Mark at least 2-3 sections for each opti
 {expert_section}
 {{{{BUSINESS_CONTEXT:{company_context}}}}}
 
-Based on the outline, primary keyword, blog description, and competitor insights above, add LLM/GEO optimization markers:
+Based on the complete outline above, identify NUANCED optimization opportunities:
 
-GLOSSARY SECTIONS: Identify sections that need a glossary box/section with term definitions
-- These are TERM AND DEFINITION sections (e.g., "Glossary", "Key Terms", "Definitions")
-- NOT generic sections - must be specifically for defining technical terms and concepts
-- Include 4-5 specific technical terms that need definitions
+GLOSSARY ITEMS (3-4 total for entire blog):
+- Pick SPECIFIC technical terms from H3/H4 subsections
+- Avoid generic terms from H2 main headings
+- Focus on niche, blog-specific terminology
 
-WHAT IS X SECTIONS: Suggest actual section headings in "What is [Topic]?" format
-- These should be REAL SECTION HEADINGS to add to the blog (e.g., "What is AI calling", "What is voice agent latency")
-- Specify the exact heading text and which section it should be added to
-- Focus on foundational concepts that readers need explained
+WHAT IS SECTIONS (2-3 total for entire blog):
+- Suggest SPECIFIC "What is [X]" headings for nuanced concepts
+- Avoid basic industry terms
+- Pick from nested subsections, not main topics
 
-SUMMARY OPENERS: Identify sections requiring 1-line summary openers for AI chunk optimization
-
-SPECIFIC TECHNIQUES: Provide specific optimization techniques per section"""
+Remember: We're creating multiple blogs, so make these suggestions UNIQUE to this specific blog's outline, not generic terms that would apply to any blog in the industry."""
 
         response = await self._call_gpt4(system_prompt, user_prompt, json_mode=True)
         try:
@@ -1136,34 +1133,29 @@ IMPORTANT: Use these resources to support points in the blog. Reference YouTube 
         # LLM optimization plan section (Step 8)
         optimization_section = ""
         if optimization_plan and any(optimization_plan.values()):
+            glossary_items = optimization_plan.get("glossary_items", [])
+            what_is_sections = optimization_plan.get("what_is_sections", [])
+
             optimization_section = f"""
 
 === LLM OPTIMIZATION PLAN (Step 8 - CRITICAL) ===
 
 {json.dumps(optimization_plan, indent=2)}
 
-🔴 CRITICAL INSTRUCTIONS -
-This plan specifies WHERE/WHAT to add glossary sections, "What is X?" headings, and summary openers:
+🔴 CRITICAL INSTRUCTIONS:
 
-GLOSSARY SECTIONS:
-- Add a glossary box/section with term definitions (e.g., "## Glossary", "## Key Terms")
-- Include specific terms and their definitions as listed in glossary_sections
-- This is a DEDICATED section for terms and definitions, not a generic content section
+GLOSSARY ITEMS ({len(glossary_items)} total):
+- Add a dedicated glossary section/box (e.g., "## Glossary" or "## Key Terms")
+- Define each term listed in glossary_items with clear, simple explanations
+- Place glossary section strategically (typically near end, before conclusion or FAQ)
 
-WHAT IS X SECTIONS:
-- Add actual section headings as specified in what_is_sections (e.g., "## What is AI calling")
-- The "heading" field contains the EXACT heading text to use
-- If "heading" is missing, generate heading from "topic" field as "What is [topic]"
-- Place these as H2 or H3 headings in the specified section location
-- Write content under these headings explaining the topic
+WHAT IS X SECTIONS ({len(what_is_sections)} total):
+- Add these as actual H2 or H3 section headings in the blog
+- Use the EXACT heading text specified in the "heading" field
+- Write 2-3 paragraphs of explanation under each heading
+- Place these sections where they naturally fit in the blog flow
 
-SUMMARY OPENERS:
-- For sections with needs_summary_opener: true → Start with a 1-line summary intro (don't explicitly write "summary")
-
-OTHER OPTIMIZATIONS:
-- Follow section_optimizations for needs_glossary, needs_what_is_format flags
-- Prioritize sections marked priority: "high" first
-- Do NOT guess placement - follow this plan exactly"""
+These are nuanced, blog-specific optimizations - implement them exactly as specified."""
 
         company_context = await self._build_company_context()
 
@@ -1825,9 +1817,9 @@ IMPORTANT: Use these exact field names. Include at least 5-7 main sections with 
         # Content format guidance
         content_format_guidance = ""
         if content_format == "ghostwritten":
-            content_format_guidance = "\n\nCONTENT FORMAT: Ghostwritten\nDO NOT write in first person like 'I'. Use professional tone and 'we' when needed. The blog should be written professionally as expert content, not as personal narrative."
+            content_format_guidance = "\n\nCONTENT FORMAT: Ghostwritten\nThe blog will be written in FIRST PERSON as if the guest is the author sharing their expertise. Structure the outline to support a narrative flow suitable for first-person storytelling - the author's insights, experiences, and recommendations. The guest's words from the transcript will be paraphrased into first-person narrative (no self-quoting)."
         elif content_format == "conversational":
-            content_format_guidance = "\n\nCONTENT FORMAT: Conversational\nWrite in a conversational, approachable tone. Use 'we' when discussing concepts. Avoid overly formal or academic language."
+            content_format_guidance = "\n\nCONTENT FORMAT: Conversational\nThe blog will summarize the host-guest discussion in narrative form. Structure the outline to support conversational flow with paraphrased insights. Write in a conversational, approachable tone. The guest's insights will be paraphrased (not quoted), though a lot of external quotes  (from their customers, books, etc.) referred by them during the discussion can be included for credibility."
 
         user_prompt = f"""Create a blog outline from this webinar transcript.
 
@@ -1892,20 +1884,28 @@ DO NOT write full introduction or conclusion text - only structural placeholders
         system_prompt = """You are an SEO and content optimization expert.
 Identify technical terms and concepts from the blog outline that need explanation."""
 
-        user_prompt = f"""Analyze this blog outline to identify:
+        user_prompt = f"""Analyze this blog outline (including all H2 main headings AND H3 subsections) to identify:
 1. 3-4 glossary terms (technical jargon that needs definition)
 2. 2-3 "What is X?" sections (foundational concepts that warrant full explanation)
 
-IMPORTANT: For "What is X?" sections, X should be a SPECIFIC CONCEPT from the outline.
-Examples of correct format:
-- "What is Voice AI?"
-- "What is Natural Language Processing?"
-- "What is Conversational AI?"
-- "What is API latency?"
+CRITICAL REQUIREMENTS:
+- Focus on NUANCED, SPECIFIC terms from H3 subsections (not generic H2 topics)
+- Avoid basic industry terms everyone knows (e.g., "What is Voice AI?", "What is TTS?")
+- Pick unique, blog-specific terms that vary across different blogs
+- Prioritize technical terms from deeper subsections (H3 level)
 
-DO NOT use generic "What is" - always include the specific concept.
+GOOD EXAMPLES (nuanced, specific):
+- "What is Direct Inward Dialling (DID)?"
+- "What is SIP Trunking?"
+- "What is WebRTC signaling?"
+- "What is PSTN interconnection?"
 
-OUTLINE SECTIONS (with subsections):
+BAD EXAMPLES (too generic):
+- "What is Voice AI?" ❌ (too basic)
+- "What is TTS?" ❌ (too common)
+- "What is API?" ❌ (everyone knows this)
+
+OUTLINE SECTIONS (with subsections - analyze ALL levels):
 {sections_str}
 
 For each glossary term, suggest placement in outline.
@@ -1914,7 +1914,7 @@ For each "What is X" section, suggest placement and provide rationale.
 Constraints:
 - Maximum 4 glossary items
 - Maximum 3 "What is X" sections
-- Focus on terms inferred from the outline headings
+- Focus on nuanced, blog-specific terms from H3 subsections
 
 Return JSON with:
 {{
@@ -2079,16 +2079,31 @@ Based on the webinar content above, identify landing page opportunities."""
 
         voice_instruction = ""
         if content_format == "ghostwritten":
-            voice_instruction = f"Write in FIRST PERSON as if {guest_name or 'the guest'} is the author. Use 'I', 'we', 'my experience'. The guest is sharing their insights directly."
+            voice_instruction = f"""Write in FIRST PERSON as if {guest_name or 'the guest'} is the author.
+
+CRITICAL - PARAPHRASING: You ARE the guest writing this blog. PARAPHRASE all webinar discussion into first-person narrative. Use 'I', 'we', 'my experience'.
+
+NO SELF-QUOTING: DO NOT quote yourself or reference 'the webinar'. This is your original blog post based on your knowledge (captured in the discussion) , not a transcript summary.
+
+EXTERNAL QUOTES ONLY: You MAY include quotes IF the guest mentions what someone else said (customer testimonials, industry experts, other people). These external quotes add credibility."""
+
         else:
-            voice_instruction = "Write as a CONVERSATIONAL discussion between host and guest. Include dialogue with speaker labels. Add contextual notes where helpful."
+            voice_instruction = """Write as a CONVERSATIONAL narrative summarizing the host-guest discussion.
+
+PARAPHRASING: Summarize the discussion in your own words. Use narrative prose, not verbatim dialogue from the transcript.
+
+NO SELF-QUOTING: DO NOT quote the guest directly - paraphrase their insights instead. Remember, the guest is the author of this blog, so quoting themselves would be awkward.
+
+EXTERNAL QUOTES ONLY: You MAY include direct quotes ONLY when the guest references what someone else said (customers, experts, other people). These add credibility and social proof.
+
+SPEAKER CONTEXT: You may mention who discussed what ("The guest explained that..." / "During the discussion...") but paraphrase the actual content."""
 
         system_prompt = f"""You are an expert blog writer and ghostwriter.
 Write a complete, engaging blog post based on this webinar transcript.
 
 {voice_instruction}
 
-IMPORTANT: Quote the guest directly when impactful. Maintain conversational tone. Apply SEO best practices."""
+IMPORTANT: PARAPHRASE the guest's insights - do NOT quote the guest directly (they are the author). Only use quotes for external sources (other people the guest mentions). Maintain conversational tone and apply SEO best practices."""
 
         user_prompt = f"""Write a complete blog post based on this webinar transcript.
 
@@ -2124,11 +2139,14 @@ Glossary Terms:
 REQUIREMENTS:
 1. Follow outline structure exactly
 2. Speak in first person if ghostwritten - And since its ghostwritten , do NOT mention stuff like - "As I said on the webinar" as we are assuming that the author/guest is writing this blog  and there was no webinar etc
-3. Maintain {content_format} format. 
+3. Maintain {content_format} format.
 4. Apply SEO best practices
 5. Insert glossary/what-is sections in the right places in the blog
 6. Target word count: 2000+ words
 7. Use markdown formatting (headers, bold, lists, etc.)
+8. QUOTING RULES (CRITICAL):
+   - PARAPHRASE: Convert all guest insights into first-person narrative (ghostwritten) or narrative prose (conversational). NO SELF-QUOTES: NEVER quote the guest/author directly (they are writing this blog, so self-quoting is awkward)
+   - EXTERNAL QUOTES ONLY: You MAY use direct quotes ONLY when the guest references what someone else said (customer testimonials, industry experts, case studies from other people)
 
 Return JSON with:
 {{
