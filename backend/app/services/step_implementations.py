@@ -708,16 +708,18 @@ async def execute_step8_llm_optimization(
             expert_opinion=expert_opinion,
             writing_style=writing_style
         )
-        logger.info(f"[Step 8] Created optimization plan for {len(optimization_plan.get('sections', []))} sections")
+
+        glossary_items = optimization_plan.get("glossary_items", [])
+        what_is_sections = optimization_plan.get("what_is_sections", [])
+
+        logger.info(f"[Step 8] Created optimization plan with {len(glossary_items)} glossary items and {len(what_is_sections)} 'what is' sections")
         logger.debug(f"[Step 8] LLM prompt captured ({len(llm_prompt)} chars) for UI display")
 
         result = {
-            "optimization_plan": optimization_plan,
-            "glossary_sections": optimization_plan.get("glossary_sections", []),
-            "what_is_sections": optimization_plan.get("what_is_sections", []),
-            "summary_sections": optimization_plan.get("summary_sections", []),
-            "llm_prompt": llm_prompt,  # Full prompt for UI display with variable highlighting
-            "summary": f"LLM optimization plan created for {len(optimization_plan.get('sections', []))} sections"
+            "glossary_items": glossary_items,
+            "what_is_sections": what_is_sections,
+            "llm_prompt": llm_prompt,
+            "summary": f"LLM optimization plan: {len(glossary_items)} glossary items, {len(what_is_sections)} 'what is' sections"
         }
 
         logger.info(f"[Step 8] Successfully completed LLM optimization planning (session: {session_id})")
@@ -1428,15 +1430,11 @@ async def execute_step17_blog_draft(
             "recommended_sections": step3_data.get("recommended_sections", [])
         }
 
-        # Extract optimization plan from Step 8
-        optimization_plan = step8_data.get("optimization_plan", {})
-
-        # Normalize what_is_sections for backward compatibility
-        if optimization_plan and "what_is_sections" in optimization_plan:
-            for section in optimization_plan["what_is_sections"]:
-                if "heading" not in section and "topic" in section:
-                    # Backfill missing heading from topic
-                    section["heading"] = f"What is {section['topic']}"
+        # Extract optimization plan from Step 8 (new simplified structure)
+        optimization_plan = {
+            "glossary_items": step8_data.get("glossary_items", []),
+            "what_is_sections": step8_data.get("what_is_sections", [])
+        }
 
         tools_data = step10_data.get("tools", [])
         resource_links = step11_data.get("resources", [])

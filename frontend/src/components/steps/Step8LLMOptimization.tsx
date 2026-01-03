@@ -87,11 +87,8 @@ export default function Step8LLMOptimization({ sessionId, initialData }: Step8Pr
   const renderOptimizationPlan = () => {
     if (!stepData) return null;
 
-    const plan = stepData.optimization_plan || {};
-    const glossarySections = stepData.glossary_sections || plan.glossary_sections || [];
-    const whatIsSections = stepData.what_is_sections || plan.what_is_sections || [];
-    const summarySections = stepData.summary_sections || plan.summary_sections || [];
-    const sections = plan.sections || [];
+    const glossaryItems = stepData.glossary_items || [];
+    const whatIsSections = stepData.what_is_sections || [];
 
     return (
       <div className="space-y-6">
@@ -99,7 +96,7 @@ export default function Step8LLMOptimization({ sessionId, initialData }: Step8Pr
         <SuccessBanner
           stepNumber={8}
           stepName="LLM Optimization Planning"
-          message="Created optimization plan for AI/GEO visibility"
+          message="Created nuanced optimization plan for AI/GEO visibility"
         />
 
         {/* LLM Prompt Display */}
@@ -114,41 +111,43 @@ export default function Step8LLMOptimization({ sessionId, initialData }: Step8Pr
             <div className="text-4xl">🎯</div>
             <div>
               <h3 className="text-xl font-bold text-gray-900">
-                LLM Optimization Plan Created
+                Nuanced LLM Optimization Plan
               </h3>
               <p className="text-sm text-gray-600">
-                Identified optimization opportunities for AI/GEO visibility
+                Blog-specific glossary terms and "What is X" sections identified
               </p>
             </div>
           </div>
         </div>
 
         {/* Optimization Categories */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Glossary Sections */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Glossary Items */}
           <div className="bg-white border-2 border-blue-200 rounded-lg p-5">
             <div className="flex items-center gap-2 mb-3">
               <span className="text-2xl">📚</span>
-              <h4 className="font-semibold text-gray-900">Glossary Terms</h4>
+              <h4 className="font-semibold text-gray-900">Glossary Items</h4>
             </div>
             <p className="text-xs text-gray-600 mb-3">
-              Sections needing terminology definitions
+              {glossaryItems.length} nuanced terms to define (3-4 expected)
             </p>
-            <div className="text-3xl font-bold text-blue-600">
-              {glossarySections.length}
+            <div className="text-3xl font-bold text-blue-600 mb-4">
+              {glossaryItems.length}
             </div>
-            {glossarySections.length > 0 && (
-              <div className="mt-3 space-y-1">
-                {glossarySections.slice(0, 3).map((section: any, index: number) => (
-                  <div key={index} className="text-xs text-gray-700 truncate">
-                    • {typeof section === 'string' ? section : section.section || section.name || 'Section'}
+            {glossaryItems.length > 0 && (
+              <div className="space-y-3">
+                {glossaryItems.map((item: any, index: number) => (
+                  <div key={index} className="p-3 bg-blue-50 rounded border border-blue-100">
+                    <div className="font-medium text-gray-900 text-sm mb-1">
+                      {item.term}
+                    </div>
+                    {item.reason && (
+                      <div className="text-xs text-gray-600">
+                        {item.reason}
+                      </div>
+                    )}
                   </div>
                 ))}
-                {glossarySections.length > 3 && (
-                  <div className="text-xs text-gray-500">
-                    +{glossarySections.length - 3} more
-                  </div>
-                )}
               </div>
             )}
           </div>
@@ -157,94 +156,32 @@ export default function Step8LLMOptimization({ sessionId, initialData }: Step8Pr
           <div className="bg-white border-2 border-green-200 rounded-lg p-5">
             <div className="flex items-center gap-2 mb-3">
               <span className="text-2xl">❓</span>
-              <h4 className="font-semibold text-gray-900">"What is" Format</h4>
+              <h4 className="font-semibold text-gray-900">"What is X" Sections</h4>
             </div>
             <p className="text-xs text-gray-600 mb-3">
-              Sections needing "What is X" structure
+              {whatIsSections.length} specific headings to add (2-3 expected)
             </p>
-            <div className="text-3xl font-bold text-green-600">
+            <div className="text-3xl font-bold text-green-600 mb-4">
               {whatIsSections.length}
             </div>
             {whatIsSections.length > 0 && (
-              <div className="mt-3 space-y-1">
-                {whatIsSections.slice(0, 3).map((section: any, index: number) => (
-                  <div key={index} className="text-xs text-gray-700 truncate">
-                    • {typeof section === 'string' ? section : section.heading || section.section || section.topic || 'Section'}
+              <div className="space-y-3">
+                {whatIsSections.map((section: any, index: number) => (
+                  <div key={index} className="p-3 bg-green-50 rounded border border-green-100">
+                    <div className="font-medium text-gray-900 text-sm mb-1">
+                      {section.heading}
+                    </div>
+                    {section.reason && (
+                      <div className="text-xs text-gray-600">
+                        {section.reason}
+                      </div>
+                    )}
                   </div>
                 ))}
-                {whatIsSections.length > 3 && (
-                  <div className="text-xs text-gray-500">
-                    +{whatIsSections.length - 3} more
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Summary Sections */}
-          <div className="bg-white border-2 border-purple-200 rounded-lg p-5">
-            <div className="flex items-center gap-2 mb-3">
-              <span className="text-2xl">📝</span>
-              <h4 className="font-semibold text-gray-900">Summary Openers</h4>
-            </div>
-            <p className="text-xs text-gray-600 mb-3">
-              Sections needing 1-line summary openers
-            </p>
-            <div className="text-3xl font-bold text-purple-600">
-              {summarySections.length}
-            </div>
-            {summarySections.length > 0 && (
-              <div className="mt-3 space-y-1">
-                {summarySections.slice(0, 3).map((section: any, index: number) => (
-                  <div key={index} className="text-xs text-gray-700 truncate">
-                    • {typeof section === 'string' ? section : section.section || section.name || 'Section'}
-                  </div>
-                ))}
-                {summarySections.length > 3 && (
-                  <div className="text-xs text-gray-500">
-                    +{summarySections.length - 3} more
-                  </div>
-                )}
               </div>
             )}
           </div>
         </div>
-
-        {/* Detailed Section Plans */}
-        {sections.length > 0 && (
-          <div className="bg-white border border-gray-200 rounded-lg p-6">
-            <h4 className="text-lg font-semibold text-gray-900 mb-4">
-              Section-by-Section Optimization Plan
-            </h4>
-            <div className="space-y-3">
-              {sections.map((section: any, index: number) => (
-                <div
-                  key={index}
-                  className="p-4 bg-gray-50 rounded border border-gray-200"
-                >
-                  <div className="font-medium text-gray-900 mb-2">
-                    {section.section_name || section.title}
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {section.optimizations?.map((opt: string, i: number) => (
-                      <span
-                        key={i}
-                        className="px-3 py-1 bg-blue-100 text-blue-800 text-xs rounded-full"
-                      >
-                        {opt}
-                      </span>
-                    ))}
-                  </div>
-                  {section.rationale && (
-                    <p className="mt-2 text-sm text-gray-600">
-                      {section.rationale}
-                    </p>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
 
         {/* Summary */}
         {stepData.summary && (
@@ -272,9 +209,9 @@ export default function Step8LLMOptimization({ sessionId, initialData }: Step8Pr
       {/* Instructions */}
       <div className="mb-6 p-4 bg-purple-50 border border-purple-200 rounded-lg">
         <p className="text-sm text-gray-700">
-          <strong>AI Task:</strong> Analyze the outline to mark which sections should use
-          LLM-optimized formats like glossary terms, "What is X" structures, and summary
-          openers for better AI search visibility.
+          <strong>AI Task:</strong> Analyze the complete outline (including all H2, H3, H4 subsections)
+          to identify 3-4 nuanced glossary terms and 2-3 specific "What is X" sections. Focus on
+          blog-specific, unique terms from deeper subsections rather than generic industry terms.
         </p>
       </div>
 
